@@ -1,0 +1,93 @@
+#include <Arduino.h>
+
+/*
+ * L298N SCRIPTED MOVEMENT — ESP32 core 2.x, with PWM speed control
+ * ----------------------------------------------------------------
+ * Sequence on boot (runs ONCE): forward slow -> turn right -> reverse
+ *                               -> turn left -> forward -> stop.
+ * Requires ENA/ENB JUMPERS REMOVED (PWM now controls speed).
+ * Common ground + motor supply as before. Wheels off ground for first run.
+ */
+
+// ---- Direction pins ----
+const int IN1 = 25, IN2 = 26;   // Motor A (left)
+const int IN3 = 27, IN4 = 14;   // Motor B (right)
+
+// ---- Enable / PWM pins ----
+const int ENA = 13;             // Motor A speed
+const int ENB = 4;              // Motor B speed
+
+// ---- PWM config (core 2.x: numbered channels) ----
+const int PWM_FREQ = 1000;
+const int PWM_RES  = 8;         // duty 0..255
+const int CH_A     = 0;
+const int CH_B     = 1;
+
+// ---- Speed tuning (0..255). Lower = slower. Below ~90-110 motors may just buzz. ----
+const int SPEED_SLOW = 120;     // "go straight slowly"
+const int SPEED_TURN = 140;     // turn speed (pivots need a bit more to overcome friction)
+
+// ---- Movement durations in ms — TUNE THESE by watching the robot ----
+const int T_FORWARD = 1500;
+const int T_TURN_90 = 600;      // time to pivot ~90deg — adjust to taste
+const int T_REVERSE = 1500;
+
+// Set both wheels. speed -255..255: +forward, -reverse, 0 stop.
+// (Duplicated inline here for a self-contained sketch.)
+void setMotor(int inA, int inB, int ch, int speed) {
+  speed = constrain(speed, -255, 255);
+  if (speed > 0)      { digitalWrite(inA, HIGH); digitalWrite(inB, LOW);  ledcWrite(ch, speed); }
+  else if (speed < 0) { digitalWrite(inA, LOW);  digitalWrite(inB, HIGH); ledcWrite(ch, -speed); }
+  else                { digitalWrite(inA, LOW);  digitalWrite(inB, LOW);  ledcWrite(ch, 0); }
+}
+
+void setWheels(int left, int right) {
+  setMotor(IN1, IN2, CH_A, left);
+  setMotor(IN3, IN4, CH_B, right);
+}
+
+// ---- Named movements ----
+void forward(int spd) { setWheels( spd,  spd); }
+void reverse(int spd) { setWheels(-spd, -spd); }
+void turnRight(int spd){ setWheels( spd, -spd); }  // left fwd, right back = pivot right
+void turnLeft(int spd) { setWheels(-spd,  spd); }  // opposite = pivot left
+void stopAll()         { setWheels(0, 0); }
+
+void setup() {
+  Serial.begin(115200);
+  delay(300);
+
+  pinMode(IN1, OUTPUT); pinMode(IN2, OUTPUT);
+  pinMode(IN3, OUTPUT); pinMode(IN4, OUTPUT);
+
+  ledcSetup(CH_A, PWM_FREQ, PWM_RES); ledcAttachPin(ENA, CH_A);
+  ledcSetup(CH_B, PWM_FREQ, PWM_RES); ledcAttachPin(ENB, CH_B);
+
+  stopAll();
+  Serial.println("\n=== SCRIPTED SEQUENCE — starting in 3s ===");
+  delay(3000);
+
+  // ---- The sequence (runs once) ----
+  Serial.println("1) Forward slow");
+  forward(SPEED_SLOW);   delay(T_FORWARD);
+
+  Serial.println("2) Turn right");
+  turnRight(SPEED_TURN); delay(T_TURN_90);
+
+  Serial.println("3) Reverse");
+  reverse(SPEED_SLOW);   delay(T_REVERSE);
+
+  Serial.println("4) Turn left");
+  turnLeft(SPEED_TURN);  delay(T_TURN_90);
+
+  Serial.println("5) Forward");
+  forward(SPEED_SLOW);   delay(T_FORWARD);
+
+  Serial.println("Done — stopping.");
+  stopAll();
+}
+
+void loop() {
+  // Sequence runs once in setup(); nothing repeats here.
+  // To loop the whole routine, move the sequence into loop() with a delay after.
+}

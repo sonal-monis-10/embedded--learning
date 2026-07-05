@@ -1,0 +1,96 @@
+#include <Arduino.h>
+
+/*
+ * 5-Channel IR Array Sensor
+ * ------------------------------------------------------------------------------
+ * @brief USE_ANALOG: selects the mode for the IR sensor:
+ *   true  -> analog: raw ADC value (reflected IR intensity)
+ *   false -> digital: 0 or 1
+ *
+ * Board powered via USB; sensor VCC from the 3V3 pin so outputs stay <=3.3V.
+ * Open Serial Monitor at 115200 baud after flashing.
+ */
+
+// ---- Mode select ----
+// Set true to read the sensors as analog; false for digital (0/1).
+const bool USE_ANALOG = false;
+
+// Number of line-tracking channels on the array.
+const int IR_SENSORS = 5;
+
+// ---- Pin map ----
+// All five pins live on ADC1, which keeps working even if WiFi/BT is enabled
+const int PIN_S1 = 36;   // ADC1_CH0, input-only pin
+const int PIN_S2 = 39;   // ADC1_CH3, input-only pin
+const int PIN_S3 = 34;   // ADC1_CH6, input-only pin
+const int PIN_S4 = 35;   // ADC1_CH7, input-only pin
+const int PIN_S5 = 32;   // ADC1_CH4, full GPIO
+
+// Channel pins in physical order S1..S5, so loops index left-to-right.
+const int LINE_PINS[IR_SENSORS] = { PIN_S1, PIN_S2, PIN_S3, PIN_S4, PIN_S5 };
+
+// Number of ADC samples averaged per analog reading. The ESP32 SAR ADC is
+// noisy (a static input can jitter tens of LSB); averaging smooths that out.
+const int SAMPLES_PER_READ = 8;
+
+// ---- Latest readings, filled fresh each loop ----
+// Holds ADC when USE_ANALOG is true, or 0/1 when false.
+int lineValues[IR_SENSORS];
+
+// Configure inputs. In analog mode we set ADC resolution/attenuation; in digital
+// mode we set pinMode INPUT. Only the active path's setup is needed.
+void setupSensors() {
+  if (USE_ANALOG) {
+    analogReadResolution(12);        // (explicit; also the default)
+    analogSetAttenuation(ADC_11db);  // full-scale ~0 - 3.3V, matches 3V3 sensors
+  } else {
+    for (int sensor = 0; sensor < IR_SENSORS; sensor += 1) {
+      pinMode(LINE_PINS[sensor], INPUT);
+    }
+  }
+}
+
+// Read one pin SAMPLES_PER_READ times and return the averaged ADC value.
+int readAveraged(int pin) {
+  long sum = 0;
+  for (int i = 0; i < SAMPLES_PER_READ; i += 1) {
+    sum += analogRead(pin);
+  }
+  return (int)(sum / SAMPLES_PER_READ);
+}
+
+// Read every channel using whichever mode USE_ANALOG selects.
+void readLineSensors() {
+  for (int sensor = 0; sensor < IR_SENSORS; sensor += 1) {
+    if (USE_ANALOG) {
+      lineValues[sensor] = readAveraged(LINE_PINS[sensor]);
+    } else {
+      lineValues[sensor] = digitalRead(LINE_PINS[sensor]);
+    }
+  }
+}
+
+// Print the row, labelled with the active mode. Values are padded to 4 columns
+// so they line up vertically whether they're 0/1 or up to max ADC.
+void printReadings() {
+  Serial.print(USE_ANALOG ? "A: " : "D: ");
+  for (int sensor = 0; sensor < IR_SENSORS; sensor += 1) {
+    Serial.printf("%4d", lineValues[sensor]);
+    if (sensor < IR_SENSORS - 1) Serial.print(' ');
+  }
+  Serial.println();
+}
+
+void setup() {
+  Serial.begin(115200);
+  delay(200);
+  setupSensors();
+  Serial.print("IR array test ready — mode: ");
+  Serial.println(USE_ANALOG ? "ANALOG" : "DIGITAL");
+}
+
+void loop() {
+  readLineSensors();
+  printReadings();
+  delay(200);
+}
