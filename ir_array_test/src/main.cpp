@@ -52,7 +52,7 @@ void setMotor(int inA, int inB, int ch, int speed) {
 // Set both wheels at once (left, right).
 void setWheels(int left, int right) {
   setMotor(IN1, IN2, CH_A, left);
-  setMotor(IN3, IN4, CH_B, right);
+  setMotor(IN4, IN3, CH_B, right);
 }
 
 // ================= MOVEMENT FUNCTIONS =================
@@ -97,7 +97,7 @@ void loop() {
   bool s5 = (lineValues[4] == 0);   // far right
 
   // ---- Decide movement from the pattern ----
-  if (s3) {
+  if (s3 || (s2 && s4)) {
     forward();            // line centered -> straight
   } else if (s4 || s5) {
     right();              // line drifted right -> arc right toward it
