@@ -1,18 +1,19 @@
 #include <Arduino.h>
 
 /*
- * LINE FOLLOWER v8 — gentle-then-spin turns, straight is prioritized
- * ------------------------------------------------------------------
- * Rule:
- *   outer sensors OFF  -> STRAIGHT   (covers S3, S2+S3, S3+S4, S2+S3+S4)
- *   S1 on (S5 off)     -> turn LEFT   : gentle arc first, spin if it persists
- *   S5 on (S1 off)     -> turn RIGHT  : gentle arc first, spin if it persists
- *   both outer on       -> junction: straight
- *   all off             -> stop + sweep search
+ * LINE FOLLOWER v6 — stop + sweep-search recovery
+ * ------------------------------------------------
+ * Same steering as v5 (outer sensors = corner spin, inner three = fine steer),
+ * but the LOST behavior is rebuilt:
+ *   1. Stop briefly (settle + debounce).
+ *   2. Sweep-search in place: rotate toward the last-seen side, and if that
+ *      misses, reverse and widen the arc (doubling) — an expanding scan that
+ *      covers both directions. No forward motion, so it can't drift further off.
+ *   3. Line found -> resume normal steering (which re-centers it).
+ *   4. Search window exhausted -> stop and stay stopped.
  *
- * Gentle arc drives BOTH wheels forward (outer faster), so a correction never
- * depends on a single weak wheel. It escalates to an in-place spin only if the
- * outer sensor stays on past ESCALATE_MS -> a real corner, not a drift.
+ * With a 7cm line there are no inter-sensor gaps, so all-white always means
+ * genuinely off the line -> searching (not coasting) is the right response.
  *
  * Sensors binary ~540 on / 4095 off, threshold 2000. S1..S5 = left..right.
  */
@@ -30,35 +31,28 @@ const int PWM_FREQ = 1000, PWM_RES = 8;
 
 // ================= SENSOR THRESHOLD =================
 const int  LINE_THRESHOLD = 2000;
-const bool LINE_IS_LOW    = true;
-
-// ================= MOTOR BALANCE =================
-// Right motor is weaker here: raise RIGHT_TRIM in ~0.05 steps until it tracks
-// straight. If right maxes out and still lags, lower LEFT_TRIM instead.
-const float LEFT_TRIM  = 1.00f;
-const float RIGHT_TRIM = 1.00f;
+const bool LINE_IS_LOW    = true;   // on the line, raw value is BELOW threshold
 
 // ================= SPEEDS (duty 0..255) =================
-const int SLOW        = 55;
-const int MAX_SPEED   = 90;
-const int MIN_PWM     = 50;
-const int SPIN_SPEED  = 70;
-const int GENTLE_DELTA = 30;   // outer-wheel boost during a gentle arc
+const int SLOW       = 55;    // straight creep
+const int MAX_SPEED  = 90;    // cap on driving wheel in a gentle pivot
+const int MIN_PWM    = 50;    // stiction floor
+const int SPIN_SPEED = 70;    // in-place spin (corners and search)
+const float TURN_GAIN = 0.05f;
 
+// Kickstart to break static friction on the first forward move.
 const int KICK_PWM = 130;
 const int KICK_MS  = 35;
 
-// ================= TURN ESCALATION =================
-const int ESCALATE_MS = 400;   // outer sensor on longer than this -> spin
-
 // ================= STEERING =================
 const int CENTER_POS = (IR_COUNT - 1) * 1000 / 2;   // = 2000
+const int DEADBAND   = 600;
 
 // ================= LOST / SEARCH =================
-const int SETTLE_MS        = 120;
-const int SEARCH_BASE_MS   = 220;
-const int SEARCH_PHASE_MAX = 1200;
-const int SEARCH_MAX_MS    = 2500;
+const int SETTLE_MS        = 120;    // stop-and-settle before searching
+const int SEARCH_BASE_MS   = 220;    // first sweep arc duration
+const int SEARCH_PHASE_MAX = 1200;   // cap on a single sweep arc
+const int SEARCH_MAX_MS    = 2500;   // total search time before giving up
 
 // ================= TIMING =================
 const int LOOP_DELAY_MS = 4;
@@ -66,16 +60,14 @@ const int LOOP_DELAY_MS = 4;
 // ================= STATE =================
 int  rawValues[IR_COUNT];
 bool onLine[IR_COUNT];
-int  lastLineSign = 0;
-bool creeping = false;
+int  lastLineSign = 0;         // -1 line last seen left, +1 right
+bool creeping = false;         // kickstart edge-detection
 
-int  activeTurnSide = 0;       // -1 left, +1 right, 0 not turning
-unsigned long turnSince = 0;
-
+// lost/search state
 bool wasLost = false;
 unsigned long lostStartMs = 0;
 bool searching = false;
-int  searchDir = 1;
+int  searchDir = 1;            // +1 spin right, -1 spin left
 unsigned long phaseStartMs = 0;
 long phaseDur = SEARCH_BASE_MS;
 
@@ -115,37 +107,23 @@ void setMotor(int inA, int inB, int ch, int sp) {
 }
 
 void setWheels(int l, int r) {
-  l = (int)(l * LEFT_TRIM);
-  r = (int)(r * RIGHT_TRIM);
   setMotor(IN1, IN2, CH_A, l);
   setMotor(IN4, IN3, CH_B, r);   // IN4/IN3 order corrects right-motor polarity
 }
 
 void stopMotors() { setWheels(0, 0); }
 
-void spinInPlace(int dir) {          // +1 right, -1 left
+void spinInPlace(int dir) {        // dir +1 = right, -1 = left
   if (dir > 0) setWheels(SPIN_SPEED, -SPIN_SPEED);
   else         setWheels(-SPIN_SPEED, SPIN_SPEED);
 }
 
-void gentleArc(int dir) {            // both wheels forward, outer faster
-  int outer = constrain(SLOW + GENTLE_DELTA, 0, MAX_SPEED);
-  if (dir < 0) setWheels(SLOW, outer);   // arc LEFT: right wheel faster
-  else         setWheels(outer, SLOW);   // arc RIGHT: left wheel faster
-}
-
-void kickForward() {
+void kickForward(int s) {
   if (creeping) return;
-  setMotor(IN1, IN2, CH_A, (int)(KICK_PWM * LEFT_TRIM));
-  setMotor(IN4, IN3, CH_B, (int)(KICK_PWM * RIGHT_TRIM));
+  setMotor(IN1, IN2, CH_A, KICK_PWM);
+  setMotor(IN4, IN3, CH_B, KICK_PWM);
   delay(KICK_MS);
   creeping = true;
-}
-
-void goStraight() {
-  int sp = applyFloor(SLOW);
-  kickForward();
-  setWheels(sp, sp);
 }
 
 // ================= SETUP =================
@@ -160,7 +138,7 @@ void setup() {
   ledcSetup(CH_B, PWM_FREQ, PWM_RES); ledcAttachPin(ENB, CH_B);
   stopMotors();
 
-  Serial.println("\n=== LINE FOLLOWER v8 (gentle-then-spin) ===");
+  Serial.println("\n=== LINE FOLLOWER v6 (stop + sweep search) ===");
 }
 
 // ================= MAIN LOOP =================
@@ -175,40 +153,43 @@ void loop() {
     wasLost = false;
     searching = false;
 
-    int side = 0;
-    if (s1 && !s5) side = -1;
-    else if (s5 && !s1) side = 1;
-
-    if (side != 0) {
+    if (s1 && !s5) {
       creeping = false;
-      if (side != activeTurnSide) {           // new turn -> restart escalation
-        activeTurnSide = side;
-        turnSince = millis();
-      }
-      if (millis() - turnSince < (unsigned long)ESCALATE_MS) {
-        gentleArc(side); state = "gentle";
-      } else {
-        spinInPlace(side); state = "spin";
-      }
-      lastLineSign = side;
+      spinInPlace(-1);                          // hard LEFT
+      lastLineSign = -1; state = "spin L";
+    } else if (s5 && !s1) {
+      creeping = false;
+      spinInPlace(1);                           // hard RIGHT
+      lastLineSign = 1; state = "spin R";
+    } else if (s1 && s5) {
+      int sp = applyFloor(SLOW);
+      kickForward(sp);
+      setWheels(sp, sp); state = "junction";    // both outer black -> creep
     } else {
-      // outer sensors off (or both on) -> straight
-      activeTurnSide = 0;
-      goStraight();
-      state = (s1 && s5) ? "junction" : "straight";
-      int e = position - CENTER_POS;          // recovery hint only
-      if (e > 0) lastLineSign = 1;
-      else if (e < 0) lastLineSign = -1;
+      int error = position - CENTER_POS;
+      int mag   = abs(error);
+      if (mag <= DEADBAND) {
+        int sp = applyFloor(SLOW);
+        kickForward(sp);
+        setWheels(sp, sp); state = "straight";
+      } else {
+        creeping = false;
+        int drive = applyFloor(constrain(SLOW + (int)(TURN_GAIN * (mag - DEADBAND)),
+                                         SLOW, MAX_SPEED));
+        if (error > 0) { setWheels(drive, 0); state = "gentle R"; }
+        else           { setWheels(0, drive); state = "gentle L"; }
+      }
+      if (error > 0) lastLineSign = 1;
+      else if (error < 0) lastLineSign = -1;
     }
   } else {
     // ---- LOST: stop, then expanding sweep-search ----
-    activeTurnSide = 0;
     unsigned long now = millis();
-    if (!wasLost) {
+    if (!wasLost) {                             // just became lost -> init
       wasLost = true;
       lostStartMs = now;
       searching = false;
-      searchDir = (lastLineSign >= 0) ? 1 : -1;
+      searchDir = (lastLineSign >= 0) ? 1 : -1; // first guess: last-seen side
       phaseDur = SEARCH_BASE_MS;
       creeping = false;
     }
@@ -219,16 +200,17 @@ void loop() {
     } else if (el < (unsigned long)SEARCH_MAX_MS) {
       if (!searching) { searching = true; phaseStartMs = now; }
       if (now - phaseStartMs >= (unsigned long)phaseDur) {
-        searchDir = -searchDir;
+        searchDir = -searchDir;                 // reverse and widen the sweep
         phaseDur = min(phaseDur * 2, (long)SEARCH_PHASE_MAX);
         phaseStartMs = now;
       }
       spinInPlace(searchDir); state = "lost:search";
     } else {
-      stopMotors(); state = "lost:giveup";
+      stopMotors(); state = "lost:giveup";      // searched everywhere, stop
     }
   }
 
+  // Throttled debug (comment out once tuned).
   static unsigned long tDbg = 0;
   if (millis() - tDbg > 150) {
     tDbg = millis();
