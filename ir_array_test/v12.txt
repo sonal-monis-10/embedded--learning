@@ -170,7 +170,7 @@ static const float DIFF_FAR_V  = 2.40f;   /* |error| == 1000                  */
  * Press 'f', mark the floor at one wheel before and after, measure between the
  * marks, divide by two. Sets the corner advance duration. Zero uses the
  * fallback below, which is only a guess. */
-static const float         ROBOT_SPEED_MMPS = 725.0f;
+static const float         ROBOT_SPEED_MMPS = 0.0f;
 static const unsigned long ADVANCE_FALLBACK_MS = 300;
 
 /* --- Autostart and stop behaviour ---------------------------------------- */

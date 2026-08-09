@@ -1,6 +1,6 @@
 /*
  * =============================================================================
- *  LINE FOLLOWER — v12
+ *  LINE FOLLOWER — v10 (production)
  * =============================================================================
  *  Target   : ESP32 DevKit V1, L298N dual H-bridge, 5-channel TCRT5000L array
  *  Platform : PlatformIO / Arduino framework
@@ -11,46 +11,7 @@
  *      framework = arduino
  *      monitor_speed = 115200
  *
- * -----------------------------------------------------------------------------
- *  OPERATION — NO INPUT REQUIRED
- * -----------------------------------------------------------------------------
- *    Power on          -> WAITING. Motors off, watching for a line.
- *    Place on the line -> starts IMMEDIATELY (LINE_HOLD_MS is 0).
- *    All five channels black for ALL_BLACK_STOP_MS -> FINISHED, brakes held.
- *    Lift clear for RE_ARM_CLEAR_MS                -> back to WAITING.
- *
- *  CAUTION: with LINE_HOLD_MS at 0 the robot launches the instant anything
- *  dark passes under the array — including your hand while carrying it to the
- *  track. If that becomes a nuisance, set LINE_HOLD_MS to 100-200 ms: still
- *  imperceptible, but it rejects a hand sweeping past.
- *
- * -----------------------------------------------------------------------------
- *  THE ALL-BLACK PROBLEM, AND HOW IT IS RESOLVED
- * -----------------------------------------------------------------------------
- *  All five channels reading black is used here as the STOP signal. But it also
- *  happens for two innocent reasons, and a single frame cannot tell them apart:
- *
- *    Parked on the tape. At a 25 mm ride height each channel averages an
- *    ~18 mm patch, so 70 mm of tape looks about 88 mm wide against a 105 mm
- *    array — all five channels can trip at once just sitting still. This was
- *    observed for five continuous seconds during bring-up.
- *
- *    A corner blob, or the array momentarily out of sensing range. Measured on
- *    this robot at the corner of a "7": about 48 ms.
- *
- *  Versus a real stop bar, where black spans the whole array along enough of
- *  the path to give several hundred milliseconds at cruise.
- *
- *  Two mechanisms separate them:
- *
- *    1. DURATION. ALL_BLACK_STOP_MS sits between the corner transient and a
- *       real bar: 3x the observed 48 ms, and well under a bar's ~750 ms.
- *
- *    2. AN ARMING LATCH. The stop detector stays inert until a clean,
- *       non-all-black line has been seen during this run. So all-black at the
- *       moment of starting is treated as the starting position, never as a
- *       finish line. Without this, starting while parked on the tape would
- *       stop the robot ALL_BLACK_STOP_MS later, every time.
+ *  Console: 'g' go, 'i' stop, 'f' speed test, 'r' report, 's' stream, 'h' help
  *
  * -----------------------------------------------------------------------------
  *  ARCHITECTURE
@@ -72,49 +33,51 @@
  *  (a) SPEEDS ARE SPECIFIED IN VOLTS, NOT DUTY.
  *      A DC motor responds to voltage. Duty only maps to voltage given a known
  *      supply, and a 4S Li-ion pack swings 16.8 V -> 12.0 V over a charge
- *      cycle. Hardcoding duty means the robot behaves differently depending on
- *      how full the battery is: at one point a fixed cruise duty delivered
- *      4.96 V against a measured 5.10 V start threshold and the robot would
- *      not move at all. Everything derives from V_BATT_NOMINAL through
- *      dutyFor(), so one constant fixes every speed together.
+ *      cycle. Hardcoding duty therefore means the robot behaves differently
+ *      depending on how full the battery is: at one point in development a
+ *      fixed cruise duty delivered 4.96 V against a measured 5.10 V start
+ *      threshold, and the robot simply would not move. Everything here derives
+ *      from V_BATT_NOMINAL through dutyFor(), so one constant fixes all speeds.
  *
  *  (b) TURN RATE IS SET BY THE DIFFERENCE BETWEEN WHEEL SPEEDS.
- *      Not their absolute values. Steering holds the difference fixed and
+ *      Not by their absolute values. So steering holds the difference fixed and
  *      slides the pair upward when the inner wheel would fall below the stall
- *      floor, so turn authority does not depend on cruise speed — which is
- *      what makes it safe to slow the robot down. The differences are
+ *      floor. Turn authority is then independent of cruise speed, which is what
+ *      makes it safe to slow the robot down for stability. The differences are
  *      themselves in volts, so cornering does not fade as the pack drains.
  *
  *  (c) A WHEEL IS EITHER ABOVE THE STALL FLOOR OR DELIBERATELY BRAKED.
- *      Never between. A duty below the start threshold is a stalled motor
- *      pretending to be a slow one: no rotation, but a perfectly valid-looking
- *      command. floorDuty() is the measured threshold plus margin.
+ *      Never in between. A duty below the start threshold is a stalled motor
+ *      pretending to be a slow one — it produces no rotation but reads as a
+ *      valid command. floorDuty() is the measured threshold plus margin, and
+ *      steering clamps to it or brakes outright.
  *
  * -----------------------------------------------------------------------------
  *  MEASURED CONSTANTS — provenance
  * -----------------------------------------------------------------------------
  *  Motor mapping   L298 channel A (EN 13) drives the PHYSICAL RIGHT wheel,
  *                  channel B (EN 33) the LEFT. Established by driving one
- *                  channel and seeing which wheel turned. B needs inverting,
- *                  A does not. Both verified forward.
+ *                  channel and observing which wheel turned. Channel B needs
+ *                  its direction inverted; A does not. Both verified forward.
  *  Start threshold 5.10 V, from a duty ramp until first rotation.
  *  Sensor order    S1..S5 = physical left..right, verified.
- *  Sensor output   Digital comparator: ~4095 or ~600, about 3400 counts of
+ *  Sensor output   Digital comparator: ~4095 or ~600, roughly 3400 counts of
  *                  separation, so a fixed 2000 threshold is ample.
  *  Geometry        Array span ~105 mm, pitch ~26 mm, tape 70 mm, axle-to-array
  *                  L = 90 mm.
- *  Motor trim      None needed. Start duties differ (75 vs 85) but at equal
+ *  Motor trim      None needed. Start duties differ (75 vs 85) but with equal
  *                  duty the robot tracks straight, because standstill stiction
  *                  and running speed are governed by different physics.
  *
  * -----------------------------------------------------------------------------
  *  KNOWN LIMITATION
  * -----------------------------------------------------------------------------
- *  Ride height is 25 mm against a 12 mm datasheet maximum (3 mm optimal).
- *  Signal falls off as roughly 1/d^2 and the IR cone widens with height, so
- *  each channel averages an ~18 mm patch rather than ~2 mm, position is known
- *  only to about +/-13 mm regardless of tuning, and spurious all-black frames
- *  become possible at all. Lowering the array is the only real fix.
+ *  Sensor ride height is 25 mm against a datasheet maximum of 12 mm (optimal
+ *  3 mm). Signal falls off as roughly 1/d^2, and the IR cone widens with
+ *  height, so each sensor averages an ~18 mm patch rather than ~2 mm. Position
+ *  is therefore known only to about +/-13 mm regardless of tuning. If cornering
+ *  ever needs to be tighter than it is, lowering the array is the fix — no
+ *  constant in this file can buy that back.
  * =============================================================================
  */
 
@@ -125,38 +88,36 @@
  *  BUILD OPTIONS
  * ========================================================================== */
 
-/* 0 for a silent production build: removes streaming, the report and the CSV
- * ring buffer, freeing about 7 kB of RAM. Console commands stay compiled
- * either way, because 'i' is the emergency stop. */
+/* Set to 0 for a silent production build. This removes all streaming, the
+ * report, and the CSV ring buffer (about 7 kB of RAM). Console commands remain
+ * available either way, because 'i' is the emergency stop and must always
+ * work. */
 #define ENABLE_TELEMETRY 1
+
+/* Begin following automatically after a delay instead of waiting for 'g'.
+ * Off by default: a robot that drives the instant it is powered on is a robot
+ * that drives off the bench while you are still holding it. */
+#define AUTOSTART 0
+static const unsigned long AUTOSTART_DELAY_MS = 3000;
 
 /* =============================================================================
  *  CONFIGURATION
  * ========================================================================== */
 
 /* --- Battery. MEASURE AT THE L298N TERMINALS WITH THE MOTORS RUNNING. ------
- * Every speed derives from this. Prefer your freshly-charged loaded voltage:
- * if this reads HIGHER than reality the robot runs slower than intended, which
- * still tracks. If it reads LOWER, the robot runs faster than intended, which
- * overshoots corners. Erring high therefore fails safe. */
+ * Every speed derives from this. A stale value here does not look like a
+ * stale value: it looks like a control bug. Update it whenever you charge. */
 static const float V_BATT_NOMINAL = 12.50f;
 
+/* --- Supply chain losses and motor limits --------------------------------- */
 static const float V_DROP_L298 = 1.50f;   /* L298 datasheet Table 4, ~350 mA  */
 static const float V_MOTOR_MAX = 12.00f;  /* motor rating; never exceed       */
 
 /* --- Speeds, in volts at the motor terminals ------------------------------ */
-static const float V_START      = 5.10f;  /* MEASURED first-rotation voltage  */
-static const float START_MARGIN = 1.15f;  /* floor = V_START * this           */
-static const float V_CRUISE     = 6.00f;  /* PRIMARY TUNING KNOB             */
-static const float V_SPIN       = 6.60f;  /* in-place rotation                */
-
-/* To go slower than cruise 6.00 V you must also lower START_MARGIN, because
- * the floor at 1.15 is 5.87 V and cruise cannot go below it:
- *     margin 1.10 -> floor 5.61 V, cruise 5.75 V, roughly a third slower
- *     margin 1.05 -> floor 5.36 V, cruise 5.50 V, roughly half speed
- * That margin absorbs a rubbing wheel, dust, or a slight incline. Cut it too
- * far and a wheel stalls mid-turn, which presents as a steering fault.
- * CHANGING SPEED INVALIDATES ROBOT_SPEED_MMPS — re-measure it afterwards. */
+static const float V_START       = 5.10f; /* MEASURED first-rotation voltage  */
+static const float START_MARGIN  = 1.15f; /* floor = V_START * this           */
+static const float V_CRUISE      = 6.00f; /* PRIMARY TUNING KNOB             */
+static const float V_SPIN        = 6.60f; /* in-place rotation                */
 
 /* --- Steering differentials, in volts ------------------------------------- *
  * The gap between outer and inner wheel at each error level. Raise if the
@@ -168,26 +129,10 @@ static const float DIFF_FAR_V  = 2.40f;   /* |error| == 1000                  */
 
 /* --- Measured chassis speed at V_CRUISE, mm/s ----------------------------- *
  * Press 'f', mark the floor at one wheel before and after, measure between the
- * marks, divide by two. Sets the corner advance duration. Zero uses the
- * fallback below, which is only a guess. */
-static const float         ROBOT_SPEED_MMPS = 725.0f;
+ * marks, divide by two. Sets the corner advance duration. Zero falls back to
+ * ADVANCE_FALLBACK_MS. */
+static const float         ROBOT_SPEED_MMPS = 0.0f;
 static const unsigned long ADVANCE_FALLBACK_MS = 300;
-
-/* --- Autostart and stop behaviour ---------------------------------------- */
-
-/* How long a line must be seen before following begins. Zero means the very
- * first frame that detects anything starts the robot. Raise to 100-200 ms if
- * accidental triggers become a nuisance — see the CAUTION in the header. */
-static const unsigned long LINE_HOLD_MS = 0;
-
-/* How long all five channels must stay black before stopping, once the stop
- * detector is armed. See the header. Observed corner transient was ~48 ms; a
- * real stop bar gives several hundred. */
-static const unsigned long ALL_BLACK_STOP_MS = 150;
-
-/* After stopping, how long the array must see nothing at all — the robot
- * lifted clear of the track — before it re-arms. */
-static const unsigned long RE_ARM_CLEAR_MS = 500;
 
 /* --- Geometry, mm --------------------------------------------------------- */
 static const float SENSOR_AHEAD_MM = 90.0f;  /* axle centre to sensor line    */
@@ -196,7 +141,7 @@ static const float RIDE_HEIGHT_MM  = 25.0f;  /* out of spec; see header       */
 static const float WHEEL_DIA_MM    = 65.0f;
 
 /* --- Motor pins, named by PHYSICAL side ---------------------------------- */
-static const int LEFT_EN  = 33, LEFT_IN_A  = 27, LEFT_IN_B  = 14, LEFT_CH  = 1;
+static const int LEFT_EN = 33, LEFT_IN_A = 27, LEFT_IN_B = 14, LEFT_CH = 1;
 static const int RIGHT_EN = 13, RIGHT_IN_A = 25, RIGHT_IN_B = 26, RIGHT_CH = 0;
 
 /* true means positive speed drives that wheel backwards, so negate it. */
@@ -210,24 +155,24 @@ static const int PWM_BITS    = 8;
  * GPIO 36/39/34/35 are input-only with no internal pull resistors: a
  * disconnected wire floats high and reads as "no line". A pattern that never
  * changes usually means a loose wire, not a control problem. */
-static const int  SENSOR_COUNT = 5;
-static const int  SENSOR_PINS[SENSOR_COUNT] = { 36, 39, 34, 35, 32 };
-static const int  SENSOR_THRESHOLD = 2000;
-static const bool LINE_READS_LOW   = true;
+static const int SENSOR_COUNT = 5;
+static const int SENSOR_PINS[SENSOR_COUNT] = { 36, 39, 34, 35, 32 };
+static const int SENSOR_THRESHOLD = 2000;
+static const bool LINE_READS_LOW  = true;
 
 /* --- Control tuning ------------------------------------------------------ *
  * Position is quantised to multiples of 500 because the sensors are binary, so
- * error takes exactly five magnitudes: 0, 500, 1000, 1500, 2000. The deadband
- * must stay below 500 or the entire first correction step is swallowed. */
-static const int ERROR_DEADBAND  = 250;
-static const int ADVANCE_MAX_ERR = 1000;  /* above this, skip the advance     */
+ * error takes exactly five magnitudes: 0, 500, 1000, 1500, 2000. DEADBAND must
+ * stay below 500 or the entire first correction step is swallowed. */
+static const int ERROR_DEADBAND   = 250;
+static const int ADVANCE_MAX_ERR  = 1000; /* above this, skip the advance     */
 
 static const unsigned long PIVOT_TIMEOUT_MS = 1500;
 
 /* --- Loop pacing --------------------------------------------------------- *
  * The sampling limit is omega_max = spot / (samples * period * radius). At a
- * ~5 mm optical spot, 3 samples and a 90 mm radius: 4 ms gives 4.6 rad/s,
- * which an in-place spin exceeds; 2 ms gives 9.3 rad/s, clearing every usable
+ * ~5 mm optical spot, 3 samples and a 90 mm radius: 4 ms gives 4.6 rad/s, which
+ * an in-place spin exceeds; 2 ms gives 9.3 rad/s, which clears every usable
  * speed. When rotation outruns the sensors, sample faster rather than turning
  * slower. */
 static const int LOOP_PERIOD_MS = 1;
@@ -237,8 +182,12 @@ static const int LOOP_PERIOD_MS = 1;
  *  The single source of truth translating desired volts into PWM duty.
  * ========================================================================== */
 
-static float availableVolts() { return V_BATT_NOMINAL - V_DROP_L298; }
+/* Volts actually reachable at the motor terminals, after bridge losses. */
+static float availableVolts() {
+  return V_BATT_NOMINAL - V_DROP_L298;
+}
 
+/* Duty required to deliver a target voltage, clamped to the motor rating. */
 static int dutyFor(float volts) {
   const float avail = availableVolts();
   if (avail <= 0.1f) return 0;
@@ -246,6 +195,7 @@ static int dutyFor(float volts) {
   return constrain((int)(255.0f * volts / avail + 0.5f), 0, 255);
 }
 
+/* Inverse of dutyFor(), for reporting. */
 static float voltsFor(int duty) {
   return availableVolts() * (float)duty / 255.0f;
 }
@@ -261,14 +211,15 @@ static int floorDuty() {
 static int cruiseDuty() { return constrain(dutyFor(V_CRUISE), 0, ceilingDuty()); }
 static int spinDuty()   { return constrain(dutyFor(V_SPIN), floorDuty(), ceilingDuty()); }
 
-/* Distance the chassis must roll after losing the line so the wheel axle
- * arrives at the corner: the array sits SENSOR_AHEAD_MM ahead of the axle, and
- * the outgoing leg's centreline is half a tape width back from the end of the
- * incoming one. */
+/* Distance the chassis must roll after losing the line so that the wheel axle
+ * arrives at the corner: the array sits SENSOR_AHEAD_MM in front of the axle,
+ * and the outgoing leg's centreline is half a tape width back from the end of
+ * the incoming one. */
 static float advanceDistanceMm() {
   return SENSOR_AHEAD_MM - LINE_WIDTH_MM / 2.0f;
 }
 
+/* That distance expressed as a duration at cruise speed. */
 static unsigned long advanceDurationMs() {
   if (ROBOT_SPEED_MMPS > 10.0f)
     return (unsigned long)(advanceDistanceMm() / ROBOT_SPEED_MMPS * 1000.0f);
@@ -284,12 +235,13 @@ static bool supplyTooLow() { return cruiseDuty() <= floorDuty(); }
  *  direction sign or a physical side is decided.
  * ========================================================================== */
 
-/* Sentinel speed meaning "hold this wheel against rotation".
+/* Sentinel speed meaning "hold this wheel still against rotation".
  * L298 datasheet Table 5: both inputs HIGH is a real brake ("fast motor
- * stop"); both LOW merely lets the wheel free-run and the chassis drags it. A
- * braked inner wheel gives a tighter, far more repeatable turn. */
+ * stop"); both LOW merely lets the wheel free-run, and the chassis then drags
+ * it. A braked inner wheel gives a tighter and far more repeatable turn. */
 static const int WHEEL_BRAKE = -30000;
 
+/* Live wheel commands, exposed for telemetry. */
 static int  g_dutyLeft = 0, g_dutyRight = 0;
 static bool g_brakeLeft = false, g_brakeRight = false;
 
@@ -314,6 +266,7 @@ static inline void writePwm(int channel, int duty) {
 #endif
 }
 
+/* Drive one bridge. Handles the brake sentinel, inversion and clamping. */
 static void driveWheel(int inA, int inB, int channel, int speed, bool invert) {
   if (speed == WHEEL_BRAKE) {
     digitalWrite(inA, HIGH); digitalWrite(inB, HIGH); writePwm(channel, 255);
@@ -379,12 +332,12 @@ static void sensorsBegin() {
  *
  * A real line produces one contiguous run, so this rejects outliers without
  * discarding the frame. Two alternatives were tried and both failed: averaging
- * every black channel lets one spurious reading at the far end drag the
- * weighted mean badly, while rejecting gapped frames outright means a single
+ * every black channel lets a single spurious reading at the far end drag the
+ * weighted mean badly, while rejecting gapped frames outright means that one
  * systematically weak channel stops the robot entirely. Ties break toward the
  * array centre as the likelier true line. */
 static void findLongestRun(LineReading &r) {
-  r.runStart  = -1;
+  r.runStart = -1;
   r.runLength = 0;
   const float centre = (SENSOR_COUNT - 1) / 2.0f;
 
@@ -407,6 +360,7 @@ static void findLongestRun(LineReading &r) {
   }
 }
 
+/* Sample every channel and derive the line position. */
 static void sampleSensors() {
   LineReading &r = g_line;
   r.blackCount = 0;
@@ -424,7 +378,11 @@ static void sampleSensors() {
   r.hadGap = (r.runLength > 0) && (r.blackCount != r.runLength);
   if (r.hadGap) g_gapFrames++;
 
-  if (r.runLength == 0) { r.found = false; r.position = 0; return; }
+  if (r.runLength == 0) {
+    r.found = false;
+    r.position = 0;
+    return;
+  }
 
   long weighted = 0;
   for (int k = r.runStart; k < r.runStart + r.runLength; k++)
@@ -434,17 +392,17 @@ static void sampleSensors() {
   r.found = true;
 }
 
-/* Every channel black. Ambiguous in a single frame: a stop bar, a wide corner
- * blob, the array parked on the tape, or the array lifted out of sensing
- * range. Callers must both debounce it and arm it. */
+/* True when every channel reads black.
+ *
+ * A 70 mm tape cannot cover a 105 mm array, so this means either a junction
+ * blob genuinely wider than the tape, or the array lifted out of sensing range
+ * — out-of-range reads identically to black. Ambiguous, so the caller creeps
+ * straight rather than committing to a manoeuvre. */
 static bool allChannelsBlack() { return g_line.blackCount == SENSOR_COUNT; }
 
-/* Nothing at all — the robot is off the track or in the air. */
-static bool nothingDetected() { return g_line.blackCount == 0; }
-
-/* The only acceptable confirmation that a pivot has finished. An outer channel
- * catching the edge mid-sweep means the line is passing by, not that the robot
- * is centred on it. */
+/* True when the centre channel has the line. This is the only acceptable
+ * confirmation that a pivot has finished: an outer channel catching the edge
+ * mid-sweep means the line is passing by, not that the robot is centred. */
 static bool centreOnLine() { return g_line.onLine[SENSOR_COUNT / 2]; }
 
 /* =============================================================================
@@ -457,22 +415,23 @@ static bool centreOnLine() { return g_line.onLine[SENSOR_COUNT / 2]; }
 static int g_error = 0;
 
 /* Which side the line was last seen on: -1 left, +1 right. Seeds the recovery
- * sweep direction, so it must never go stale — refreshed on every frame that
- * carries directional information. */
+ * sweep direction, so it must never be allowed to go stale — it is refreshed on
+ * every frame that carries directional information. */
 static int g_lastSeenSide = 0;
 
-static const char *g_state = "boot";
+/* Named for telemetry and for reasoning about traces. */
+static const char *g_state = "idle";
 
-/* Convert an error magnitude into an outer/inner wheel pair.
+/* Convert error magnitude into an outer/inner wheel pair.
  *
- * Idea (b): hold the DIFFERENCE fixed, because that is what sets turn rate,
- * and slide the pair upward if the inner wheel would drop below the stall
- * floor. Turn authority then does not depend on cruise speed. */
+ * Idea (b) from the header: hold the DIFFERENCE fixed, because that is what
+ * sets turn rate, and slide the pair upward if the inner wheel would drop
+ * below the stall floor. Turn authority then does not depend on cruise speed. */
 static void applyDifferential(float differentialVolts, bool turnRight,
                               const char *nameRight, const char *nameLeft) {
-  const int base   = cruiseDuty();
+  const int base  = cruiseDuty();
   const int floorD = floorDuty();
-  const int cap    = ceilingDuty();
+  const int cap   = ceilingDuty();
 
   const int difference = dutyFor(differentialVolts);
   int outer = base + difference / 2;
@@ -491,10 +450,10 @@ static void applyDifferential(float differentialVolts, bool turnRight,
  *
  * Five explicit levels rather than a continuous gain, because binary sensors
  * quantise position to multiples of 500 and a smooth Kp buys nothing at that
- * resolution. What levels buy is idea (c): each guarantees every wheel is
- * above the floor or deliberately braked, never stalled by accident. */
+ * resolution. What levels do buy is idea (c): each one guarantees every wheel
+ * is above the floor or deliberately braked, never stalled by accident. */
 static void applySteering(int error) {
-  const int  magnitude = abs(error);
+  const int magnitude = abs(error);
   const bool turnRight = (error > 0);
 
   if (magnitude <= ERROR_DEADBAND) {
@@ -518,15 +477,25 @@ static void applySteering(int error) {
     return;
   }
 
-  if (magnitude > 500) applyDifferential(DIFF_FAR_V,  turnRight, "turn R", "turn L");
-  else                 applyDifferential(DIFF_NEAR_V, turnRight, "trim R", "trim L");
+  if (magnitude > 500)
+    applyDifferential(DIFF_FAR_V,  turnRight, "turn R", "turn L");
+  else
+    applyDifferential(DIFF_NEAR_V, turnRight, "trim R", "trim L");
 }
 
-/* One frame of line following, given that a line is visible. */
+/* One frame of line following, given that the line is visible. */
 static void followLine() {
+  if (allChannelsBlack()) {
+    const int base = cruiseDuty();
+    setWheels(base, base);
+    g_state = "all-black";
+    return;                            /* no directional info; do not update side */
+  }
+
   g_error = g_line.position - POSITION_CENTRE;
   if (g_error > 0)      g_lastSeenSide =  1;
   else if (g_error < 0) g_lastSeenSide = -1;
+
   applySteering(g_error);
 }
 
@@ -538,7 +507,7 @@ static void followLine() {
  *    Advance -> roll forward so the axle reaches the corner, then pivot
  *    PivotA  -> rotate toward the last-seen side until the centre confirms
  *    PivotB  -> rotate the other way, given twice as long
- *    Halted  -> terminal; brakes held
+ *    Halted  -> terminal; brakes held until re-armed
  * ========================================================================== */
 
 enum Phase { PHASE_TRACK, PHASE_ADVANCE, PHASE_PIVOT_A, PHASE_PIVOT_B, PHASE_HALTED };
@@ -577,16 +546,20 @@ static void enterHalted() {
   g_state = "HALTED";
 #if ENABLE_TELEMETRY
   Serial.println(F("HALTED: swept both ways, centre channel never confirmed."));
-  Serial.println(F("Lift the robot clear to re-arm."));
+  Serial.println(F("Press 'i' then 'g' to re-arm."));
 #endif
 }
 
+static void resumeTracking() {
+  g_phase = PHASE_TRACK;
+  followLine();
+}
+
 /* Advance only makes sense if the line was lost from a roughly centred,
- * straight-ahead state — the array running off the end of the tape at a
- * corner, with the axle still behind the junction. If the robot was already
- * far off the line, rolling forward carries it further away and the pivot
- * cannot reach back. Gating on the error at the moment of loss is what fixed
- * cornering. */
+ * straight-ahead state — the array running off the end of the tape at a corner,
+ * with the axle still behind the junction. If the robot was already far off the
+ * line, rolling forward carries it further away and the subsequent pivot cannot
+ * reach back. Gating on the error at the moment of loss is what fixed cornering. */
 static void handleTrackPhase() {
   if (g_line.found) { followLine(); return; }
   if (abs(g_error) <= ADVANCE_MAX_ERR) enterAdvance();
@@ -594,9 +567,9 @@ static void handleTrackPhase() {
 }
 
 /* Any channel reacquiring is enough here: the line reappearing during the
- * advance means it was never really lost and the heading still holds. */
+ * advance means it was never really lost, and the current heading still holds. */
 static void handleAdvancePhase() {
-  if (g_line.found) { g_phase = PHASE_TRACK; followLine(); return; }
+  if (g_line.found)                                    { resumeTracking(); return; }
   if (millis() - g_phaseStartMs < advanceDurationMs()) {
     const int base = cruiseDuty();
     setWheels(base, base);
@@ -606,9 +579,10 @@ static void handleAdvancePhase() {
   enterPivotA();
 }
 
+/* Pivots exit only on the centre channel. See centreOnLine(). */
 static void handlePivotAPhase() {
-  if (centreOnLine()) { g_phase = PHASE_TRACK; followLine(); return; }
-  if (millis() - g_phaseStartMs < PIVOT_TIMEOUT_MS) {
+  if (centreOnLine())                                { resumeTracking(); return; }
+  if (millis() - g_phaseStartMs < PIVOT_TIMEOUT_MS)  {
     spinInPlace(g_pivotDirection);
     g_state = "lost:pivA";
     return;
@@ -619,8 +593,8 @@ static void handlePivotAPhase() {
 /* Twice the budget, because this sweep must first undo the previous one before
  * it covers any new ground. */
 static void handlePivotBPhase() {
-  if (centreOnLine()) { g_phase = PHASE_TRACK; followLine(); return; }
-  if (millis() - g_phaseStartMs < PIVOT_TIMEOUT_MS * 2) {
+  if (centreOnLine())                                    { resumeTracking(); return; }
+  if (millis() - g_phaseStartMs < PIVOT_TIMEOUT_MS * 2)  {
     spinInPlace(g_pivotDirection);
     g_state = "lost:pivB";
     return;
@@ -628,160 +602,32 @@ static void handlePivotBPhase() {
   enterHalted();
 }
 
+/* Dispatch one frame of the recovery machine. Every path issues a motor
+ * command, so the robot can never be left silently uncommanded. */
+static void updateFollowing() {
+  switch (g_phase) {
+    case PHASE_TRACK:    handleTrackPhase();    break;
+    case PHASE_ADVANCE:  handleAdvancePhase();  break;
+    case PHASE_PIVOT_A:  handlePivotAPhase();   break;
+    case PHASE_PIVOT_B:  handlePivotBPhase();   break;
+    case PHASE_HALTED:   brakeWheels(); g_state = "HALTED"; break;
+  }
+}
+
 /* =============================================================================
  *  OPERATING MODES
- *
- *    WAITING  -> motors off, watching for a line. Entered on boot.
- *    FOLLOWING-> the recovery machine above is running.
- *    FINISHED -> stopped on an armed, debounced all-black. Brakes held.
- *    IDLE     -> manual stop via the console only.
- *    SPEEDTEST-> drives straight briefly so speed can be measured.
  * ========================================================================== */
 
-enum Mode { MODE_WAITING, MODE_FOLLOWING, MODE_FINISHED, MODE_IDLE, MODE_SPEED_TEST };
-static Mode g_mode = MODE_WAITING;
-
-static unsigned long g_modeStartMs = 0;
-static unsigned long g_lineSeenSinceMs = 0;
-static bool g_lineSeen = false;
-static unsigned long g_clearSinceMs = 0;
-static bool g_clearActive = false;
-
-/* All-black stop state. See the header for why both of these are needed. */
-static bool g_stopArmed = false;          /* a clean line has been seen       */
-static bool g_allBlackActive = false;
-static unsigned long g_allBlackSinceMs = 0;
-
+enum Mode { MODE_IDLE, MODE_FOLLOW, MODE_SPEED_TEST };
+static Mode g_mode = MODE_IDLE;
+static unsigned long g_speedTestStartMs = 0;
 static const unsigned long SPEED_TEST_MS = 2000;
-
-static void enterWaiting() {
-  g_mode = MODE_WAITING;
-  g_modeStartMs = millis();
-  g_phase = PHASE_TRACK;
-  g_lineSeen = false;
-  g_clearActive = false;
-  g_allBlackActive = false;
-  g_stopArmed = false;
-  coastWheels();
-  g_state = "waiting";
-#if ENABLE_TELEMETRY
-  Serial.println(F("WAITING: place the robot on the line."));
-#endif
-}
-
-static void enterFollowing() {
-  g_mode = MODE_FOLLOWING;
-  g_modeStartMs = millis();
-  g_phase = PHASE_TRACK;
-  g_allBlackActive = false;
-  /* Disarmed on purpose: the robot may be starting while parked on tape wide
-   * enough to read all-black, and that must not be mistaken for a stop bar. */
-  g_stopArmed = false;
-  g_error = 0;
-#if ENABLE_TELEMETRY
-  Serial.printf("FOLLOWING: cruise duty %d (%.2f V), advance %lu ms.\n",
-                cruiseDuty(), voltsFor(cruiseDuty()), advanceDurationMs());
-#endif
-}
-
-static void enterFinished() {
-  g_mode = MODE_FINISHED;
-  g_modeStartMs = millis();
-  g_clearActive = false;
-  brakeWheels();
-  g_state = "FINISHED";
-#if ENABLE_TELEMETRY
-  Serial.println(F("FINISHED: stop bar detected. Lift clear to re-arm."));
-#endif
-}
 
 static void enterIdle() {
   g_mode = MODE_IDLE;
   g_phase = PHASE_TRACK;
   coastWheels();
   g_state = "idle";
-}
-
-/* Watch for a line and start.
- *
- * The condition is deliberately just "something detected", NOT "a clean
- * non-all-black line". At a 25 mm ride height the array parked on 70 mm tape
- * can read all five channels black, so requiring a clean pattern here meant
- * the robot would sit and wait forever. The all-black stop is protected by its
- * arming latch instead. */
-static void updateWaiting() {
-  coastWheels();
-  g_error = g_line.found ? (g_line.position - POSITION_CENTRE) : 0;
-
-  if (supplyTooLow()) {
-    g_state = "low battery";
-    g_lineSeen = false;
-    return;
-  }
-
-  if (!g_line.found) {
-    g_lineSeen = false;
-    g_state = "waiting";
-    return;
-  }
-
-  if (!g_lineSeen) { g_lineSeen = true; g_lineSeenSinceMs = millis(); }
-
-  if (millis() - g_lineSeenSinceMs >= LINE_HOLD_MS) { enterFollowing(); return; }
-  g_state = "arming";
-}
-
-/* One frame of following, plus the armed and debounced all-black stop test.
- *
- * Checked here rather than inside followLine() so the decision to stop is
- * visible at the top level, next to the mode change it causes, instead of
- * being buried in the steering path. */
-static void updateFollowing() {
-  if (allChannelsBlack()) {
-    if (!g_stopArmed) {
-      /* No clean line seen yet this run, so this is the starting position or a
-       * lifted array — not a finish line. Creep straight and keep looking.
-       * Direction memory is not updated: an all-black frame carries none. */
-      const int base = cruiseDuty();
-      setWheels(base, base);
-      g_state = "ab:unarmed";
-      g_allBlackActive = false;
-      return;
-    }
-
-    if (!g_allBlackActive) { g_allBlackActive = true; g_allBlackSinceMs = millis(); }
-    if (millis() - g_allBlackSinceMs >= ALL_BLACK_STOP_MS) { enterFinished(); return; }
-
-    /* Armed but not yet confirmed: creep straight while the debounce runs. */
-    const int base = cruiseDuty();
-    setWheels(base, base);
-    g_state = "all-black";
-    return;
-  }
-
-  /* A clean, non-all-black frame. Now a later all-black really does mean a bar. */
-  g_allBlackActive = false;
-  g_stopArmed = true;
-
-  switch (g_phase) {
-    case PHASE_TRACK:   handleTrackPhase();   break;
-    case PHASE_ADVANCE: handleAdvancePhase(); break;
-    case PHASE_PIVOT_A: handlePivotAPhase();  break;
-    case PHASE_PIVOT_B: handlePivotBPhase();  break;
-    case PHASE_HALTED:  brakeWheels(); g_state = "HALTED"; break;
-  }
-}
-
-/* Stay stopped until the array sees nothing for a sustained interval, meaning
- * the robot has been lifted clear. Then re-arm. */
-static void updateFinished() {
-  brakeWheels();
-  g_state = "FINISHED";
-
-  if (!nothingDetected()) { g_clearActive = false; return; }
-
-  if (!g_clearActive) { g_clearActive = true; g_clearSinceMs = millis(); }
-  if (millis() - g_clearSinceMs >= RE_ARM_CLEAR_MS) enterWaiting();
 }
 
 static void updateIdle() {
@@ -795,13 +641,13 @@ static void updateIdle() {
 /* Drives straight for a fixed interval so chassis speed can be measured with a
  * ruler. Feeds ROBOT_SPEED_MMPS, which sets the corner advance duration. */
 static void updateSpeedTest() {
-  if (millis() - g_modeStartMs < SPEED_TEST_MS) {
+  if (millis() - g_speedTestStartMs < SPEED_TEST_MS) {
     const int base = cruiseDuty();
     setWheels(base, base);
     g_state = "speedtest";
     return;
   }
-  enterWaiting();
+  enterIdle();
 #if ENABLE_TELEMETRY
   Serial.println(F("Speed test done. Measure between the marks, divide by 2."));
 #endif
@@ -809,8 +655,8 @@ static void updateSpeedTest() {
 
 /* =============================================================================
  *  LAYER 6 — TELEMETRY
- *  Observation only. Nothing above depends on anything below, so setting
- *  ENABLE_TELEMETRY to 0 removes it completely.
+ *  Observation only. Nothing above this line depends on anything below it, so
+ *  setting ENABLE_TELEMETRY to 0 removes it completely.
  * ========================================================================== */
 
 static float g_loopMs = 0, g_loopMsPeak = 0;
@@ -818,9 +664,9 @@ static unsigned long g_loopCount = 0;
 
 #if ENABLE_TELEMETRY
 
-static const int LOG_CAPACITY  = 300;
-static const int LOG_EVERY_NTH = 8;
-static const unsigned long STREAM_QUIET_MS  = 250;
+static const int  LOG_CAPACITY = 300;
+static const int  LOG_EVERY_NTH = 8;
+static const unsigned long STREAM_IDLE_MS   = 250;
 static const unsigned long STREAM_ACTIVE_MS = 1000;
 
 struct LogEntry {
@@ -828,7 +674,7 @@ struct LogEntry {
   uint8_t  bits;
   int16_t  position, error, dutyLeft, dutyRight;
   uint16_t periodUs;
-  char     state[12];
+  char     state[10];
 };
 
 static LogEntry g_log[LOG_CAPACITY];
@@ -891,8 +737,8 @@ static void printReport() {
   Serial.printf ("spin             %6.2f  %5d\n", V_SPIN, spinDuty());
   Serial.printf ("ceiling          %6.2f  %5d\n", V_MOTOR_MAX, ceilingDuty());
   if (supplyTooLow())
-    Serial.println(F("*** cruise at or below the floor: charge the pack, or"
-                     " correct V_BATT_NOMINAL. Will not start."));
+    Serial.println(F("*** cruise is at or below the floor: charge the pack, or"
+                     " correct V_BATT_NOMINAL. Following will be refused."));
   Serial.println();
   Serial.println(F("error level    volts   outer/inner"));
   {
@@ -920,13 +766,6 @@ static void printReport() {
   Serial.printf("pivot timeout    : %lu ms\n", PIVOT_TIMEOUT_MS);
   Serial.printf("deadband         : %d  (position quantum is 500)\n", ERROR_DEADBAND);
   Serial.println();
-  Serial.printf("line hold        : %lu ms before starting%s\n", LINE_HOLD_MS,
-                (LINE_HOLD_MS == 0) ? "  (instant)" : "");
-  Serial.printf("all-black stop   : %lu ms, once armed by a clean line\n",
-                ALL_BLACK_STOP_MS);
-  Serial.printf("stop armed       : %s\n", g_stopArmed ? "yes" : "no");
-  Serial.printf("re-arm           : %lu ms of nothing detected\n", RE_ARM_CLEAR_MS);
-  Serial.println();
   Serial.println(F("left  wheel: L298 ch B, EN 33, invert true"));
   Serial.println(F("right wheel: L298 ch A, EN 13, invert false"));
   Serial.printf("geometry         : L %.0f mm, tape %.0f mm, height %.0f mm%s\n",
@@ -941,7 +780,6 @@ static void printReport() {
   Serial.printf("pattern          : [%s]  run %d/%d  black %d%s  error %d\n",
                 pattern, g_line.runStart, g_line.runLength,
                 g_line.blackCount, g_line.hadGap ? "  gap" : "", g_error);
-  Serial.printf("state            : %s\n", g_state);
   Serial.println();
   Serial.printf("loop period      : %.2f ms now, %.2f ms peak\n", g_loopMs, g_loopMsPeak);
   Serial.printf("gapped frames    : %lu of %lu\n", g_gapFrames, g_loopCount);
@@ -968,9 +806,8 @@ static void printCsv() {
 
 static void printHelp() {
   Serial.println();
-  Serial.println(F("Runs on its own: place it on the line and it starts."));
-  Serial.println(F("i  stop      w  back to waiting     f  speed test (2 s)"));
-  Serial.println(F("r  report    c  dump CSV            s  stream on/off"));
+  Serial.println(F("g  go        i  stop        f  speed test (2 s)"));
+  Serial.println(F("r  report    c  dump CSV    s  stream on/off    h  help"));
   Serial.println();
 }
 
@@ -981,8 +818,7 @@ static void telemetryUpdate(uint16_t periodUs) {
   if (!g_streaming) return;
 
   const unsigned long now = millis();
-  const unsigned long gap = (g_mode == MODE_FOLLOWING) ? STREAM_ACTIVE_MS
-                                                       : STREAM_QUIET_MS;
+  const unsigned long gap = (g_mode == MODE_FOLLOW) ? STREAM_ACTIVE_MS : STREAM_IDLE_MS;
   if (g_state != g_lastStreamedState || now - g_lastStreamMs >= gap) {
     g_lastStreamMs = now;
     g_lastStreamedState = g_state;
@@ -992,27 +828,50 @@ static void telemetryUpdate(uint16_t periodUs) {
 
 #else   /* telemetry disabled: empty stubs, no code emitted */
 static void printReport() {}
-static void printCsv()    {}
-static void printHelp()   {}
+static void printCsv() {}
+static void printHelp() {}
 static void telemetryUpdate(uint16_t) {}
 static bool g_streaming = false;
 #endif
 
 /* =============================================================================
  *  CONSOLE
- *  Optional throughout. Always compiled, because 'i' is the emergency stop.
+ *  Always compiled, even in a silent build: 'i' is the emergency stop.
  * ========================================================================== */
+
+static void startFollowing() {
+  if (!g_line.found) {
+#if ENABLE_TELEMETRY
+    Serial.println(F("Refused: no line under the array."));
+#endif
+    return;
+  }
+  if (supplyTooLow()) {
+#if ENABLE_TELEMETRY
+    Serial.println(F("Refused: cruise is at or below the stall floor."));
+    Serial.println(F("Charge the pack, or correct V_BATT_NOMINAL."));
+#endif
+    return;
+  }
+  g_mode = MODE_FOLLOW;
+  g_phase = PHASE_TRACK;
+  g_phaseStartMs = millis();
+#if ENABLE_TELEMETRY
+  Serial.printf("Following. cruise duty %d (%.2f V), advance %lu ms.\n",
+                cruiseDuty(), voltsFor(cruiseDuty()), advanceDurationMs());
+#endif
+}
 
 static void handleCommand(char c) {
   switch (c) {
+    case 'g': startFollowing(); break;
     case 'i': enterIdle();
 #if ENABLE_TELEMETRY
-              Serial.println(F("Idle. Press 'w' to resume automatic operation."));
+              Serial.println(F("Idle."));
 #endif
               break;
-    case 'w': enterWaiting(); break;
     case 'f': g_mode = MODE_SPEED_TEST;
-              g_modeStartMs = millis();
+              g_speedTestStartMs = millis();
 #if ENABLE_TELEMETRY
               Serial.println(F("Driving straight 2 s. Mark the floor at one"
                                " wheel before and after."));
@@ -1051,17 +910,23 @@ void setup() {
 
 #if ENABLE_TELEMETRY
   Serial.println();
-  Serial.println(F("=== LINE FOLLOWER v12 ==="));
+  Serial.println(F("=== LINE FOLLOWER v10 ==="));
   printReport();
   printHelp();
 #endif
 
-  enterWaiting();
+#if AUTOSTART
+  delay(AUTOSTART_DELAY_MS);
+  sampleSensors();
+  startFollowing();
+#else
+  enterIdle();
+#endif
 }
 
 /* One control cycle: measure elapsed time, take input, sense, act, report,
  * then pace. Sensing happens once per cycle and every consumer reads the same
- * frame, so no two decisions within a cycle can disagree about what was seen. */
+ * frame, so no two decisions in a cycle can disagree about what was seen. */
 void loop() {
   static unsigned long previousUs = micros();
   const unsigned long nowUs = micros();
@@ -1076,10 +941,8 @@ void loop() {
   sampleSensors();
 
   switch (g_mode) {
-    case MODE_WAITING:    updateWaiting();   break;
-    case MODE_FOLLOWING:  updateFollowing(); break;
-    case MODE_FINISHED:   updateFinished();  break;
     case MODE_IDLE:       updateIdle();      break;
+    case MODE_FOLLOW:     updateFollowing(); break;
     case MODE_SPEED_TEST: updateSpeedTest(); break;
   }
 
