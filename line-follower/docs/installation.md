@@ -117,8 +117,7 @@ placeholders come from PlatformIO's own scaffolding):
 │   ├── pins.h
 │   ├── README
 │   ├── recovery.h
-│   ├── sensors.h
-│   └── telemetry.h
+│   └── sensors.h
 ├── lib
 │   └── README
 ├── platformio.ini
@@ -130,8 +129,7 @@ placeholders come from PlatformIO's own scaffolding):
 │   ├── main.cpp
 │   ├── motors.cpp
 │   ├── recovery.cpp
-│   ├── sensors.cpp
-│   └── telemetry.cpp
+│   └── sensors.cpp
 └── test
     └── README
 ```
