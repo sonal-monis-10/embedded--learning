@@ -81,7 +81,106 @@ A CP210x or CH340 USB-serial chip may need its driver package; most current kern
 
 ---
 
-## 4. Build and flash
+## 4. Project file layout
+
+PlatformIO's initialised project already contains `include/` and `src/`. Create the
+empty headers and translation units the project is split into, plus the docs folder.
+Run these from the project root:
+
+```bash
+# Headers
+touch include/pins.h include/config.h include/conversion.h \
+      include/motors.h include/sensors.h include/control.h \
+      include/recovery.h include/telemetry.h
+
+# Implementations
+touch src/main.cpp src/calibrate.cpp src/conversion.cpp \
+      src/motors.cpp src/sensors.cpp src/control.cpp \
+      src/recovery.cpp src/telemetry.cpp
+
+# Documentation
+mkdir -p docs
+```
+
+The project root should now look like this (`lib/`, `test/` and the `README`
+placeholders come from PlatformIO's own scaffolding):
+
+```
+.
+├── docs
+│   └── installation.md
+├── include
+│   ├── config.h
+│   ├── control.h
+│   ├── conversion.h
+│   ├── motors.h
+│   ├── pins.h
+│   ├── README
+│   ├── recovery.h
+│   ├── sensors.h
+│   └── telemetry.h
+├── lib
+│   └── README
+├── platformio.ini
+├── readme
+├── src
+│   ├── calibrate.cpp
+│   ├── control.cpp
+│   ├── conversion.cpp
+│   ├── main.cpp
+│   ├── motors.cpp
+│   ├── recovery.cpp
+│   ├── sensors.cpp
+│   └── telemetry.cpp
+└── test
+    └── README
+```
+
+PlatformIO compiles every `.cpp` under `src/` and resolves `#include` against
+`include/`, so no build file needs updating when a module is added.
+
+---
+
+## 5. Build environments (`platformio.ini`)
+
+Two environments share one board configuration so you can switch between the robot
+firmware and the calibration/bench build without editing sources:
+
+```ini
+[platformio]
+default_envs = robot
+
+[env]
+platform = espressif32
+board = esp32doit-devkit-v1
+framework = arduino
+monitor_speed = 115200
+build_flags = -Wall -Wextra
+
+[env:robot]
+build_src_filter = +<*> -<calibrate.cpp>
+
+[env:calibrate]
+build_src_filter = +<calibrate.cpp>
+```
+
+`[env]` holds everything common to both: board, framework, 115200 baud monitor, and
+`-Wall -Wextra` so warnings surface in either build.
+
+`build_src_filter` decides which files in `src/` are compiled:
+
+- **`robot`** — production firmware. Everything except `calibrate.cpp`.
+- **`calibrate`** — only `calibrate.cpp`, for dev tests, sensor calibration and design
+  rule checks.
+
+Both define their own `setup()`/`loop()`, so the filter is what keeps them from
+colliding at link time. `default_envs = robot` means a bare `pio run` builds the robot.
+
+---
+
+## 6. Build and flash
+
+Without `-e`, PlatformIO uses `default_envs`, so these act on `robot`:
 
 ```bash
 pio run                  # compile
@@ -89,10 +188,15 @@ pio run -t upload        # compile and flash
 pio device monitor       # serial output
 ```
 
+Pass `-e <env>` to target the other one:
+
+```bash
+pio run -e calibrate                # compile the calibration build
+pio run -e calibrate -t upload      # compile and flash it
+pio run -t upload -e robot          # switch back to the robot firmware
+```
+
 Exit the monitor with `Ctrl+C`.
 
-The monitor defaults to 9600 baud. To match a different `Serial.begin()` rate, add it to `platformio.ini` so everyone gets the same setting:
-
-```ini
-monitor_speed = 115200
-```
+The monitor runs at 115200 to match `Serial.begin(115200)`. `monitor_speed` lives in
+`[env]`, so both environments and everyone on the project get the same rate.
