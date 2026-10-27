@@ -1,0 +1,11 @@
+{
+    // Each PlatformIO project is its own root, so VS Code / IntelliSense reads
+    // that project's .vscode/c_cpp_properties.json (its include paths).
+    "folders": [
+        { "path": "esp32-oled" },
+        { "path": "line-follower" },
+        { "path": "ir_array_test" },
+        { "path": "Random_Number_Dice" }
+    ],
+    "settings": {}
+}
