@@ -8,8 +8,8 @@ web
 
 ## Users
 
-- **Demo visitors (primary).** Strangers at an event, stall or showcase. They see the device, scan a pairing QR with their phone camera, type a name, and play with it for a few minutes. They have never seen the app, get no explanation, and leave when it stops being fun or clear. One phone per visitor; several visitors may control the same device in turn.
-- **The owner/admin (Sonal).** Registers devices, downloads their `.env` files for firmware builds, shows the owner pairing QR for each device on a laptop at the stall, and runs the nightly cleanup manually when testing. Technical; uses the admin page on a laptop.
+- **Demo visitors (primary).** Strangers at an event, stall or showcase. They see the device, scan the pairing QR shown on its own OLED with their phone camera, type a name, and play with it for a few minutes. They have never seen the app, get no explanation, and leave when it stops being fun or clear. One visitor controls a device at a time; the next visitor gets a fresh QR on the OLED when the turn ends.
+- **The maker (Sonal).** Builds and flashes the firmware (devices register themselves on first boot), and does maintenance with curl when needed (delete a device, release it, run the cleanup). There is no admin web page.
 
 ## Product Purpose
 
@@ -23,14 +23,14 @@ A small physical screen that reacts to the phone in your hand: tilt it and robot
 
 - Visitors stand next to the device and look back and forth between their phone and the OLED; the device is the show, the phone is the controller.
 - In Eyes mode the phone is held and tilted while the app is open, so the app is used one-handed.
-- Pairing: the QR is shown on a web page (the admin page for the first phone, an owner's phone for more). Codes are single-use and expire after 2 minutes; sessions end at 00:00 IST, when all people data is wiped and everyone pairs again.
+- Pairing: a free device's OLED shows its device ID, a QR and the code in text (sent by the server). Codes are single-use and replaced every 2 minutes. A turn ends when the visitor taps Leave, after 10 minutes without activity, or at 00:00 IST, when all people data is wiped; the OLED then shows a fresh QR.
 - The device or simulator may be offline or the free Render backend may be waking up (~1 min cold start); visitors will hit these states.
 
 ## Capabilities and Constraints
 
-- Modes: `idle`, `eyes` (phone gyroscope/accelerometer, phase 2), `music` (song search, disc + progress or synced lyrics, phase 3), AI lyric animations (phase 4).
-- Roles per device: owner (can rename, add phones via a member QR, remove members) and member (controls the device, can leave).
-- Admin actions need the `ADMIN_KEY`.
+- Modes: `idle`, `eyes` (phone gyroscope/accelerometer streamed over a WebSocket; basic in phase 1, richer in phase 2), `music` (song search, disc + progress or synced lyrics, phase 3), AI lyric animations (phase 4).
+- One phone controls one device, and a device has one controlling phone at a time. Pairing another device releases the first.
+- Devices register themselves with the `PROVISION_KEY` built into the firmware; maintenance routes need the `ADMIN_KEY`.
 - Motion sensors on iOS need HTTPS and a tap to grant permission.
 - The OLED is 128×64, 1-bit; anything the app previews of the device should respect that.
 - English only.

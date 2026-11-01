@@ -1,20 +1,21 @@
 # Phase 2: Robot Eyes
 
-**Goal:** open a device on the phone, choose **Eyes**, tap **Start
-sensors**. Tilting the phone moves a pair of robot eyes on the OLED
-smoothly in real time, and the eyes react to shakes, flips and inactivity.
+**Goal:** the basic tilt-to-eyes loop already works at the end of phase 1.
+Phase 2 makes the eyes feel alive: calibration, blinks, moods, shakes,
+flips and inactivity, plus expression buttons and a live preview.
 
-Needs phase 1 (QR pairing, devices, secure MQTT). Shared design: [README.md](README.md).
+Needs phase 1 (self-registering devices, QR-on-the-OLED pairing, the
+`/api/live` tilt stream, secure MQTT). Shared design: [README.md](README.md).
 
 ---
 
 ## A. Data flow
 
 ```
-Phone sensors ──► frontend: useOrientation()           ──MQTT QoS0──► Mosquitto ──► ESP32 eyes mode
- DeviceOrientation   pitch = beta, roll = gamma           d/<id>/imu    (ACL:      low-pass filter
- DeviceMotion        accelG = |a| / 9.81                  ~20 Hz        owner      → eye targets
-                     calibration offset subtracted        only on change  only)    → render 30 fps
+Phone sensors ──► frontend: useOrientation() ──WebSocket──► backend /api/live ──MQTT QoS0──► ESP32 eyes mode
+ DeviceOrientation   pitch = beta, roll = gamma   {"t":"imu"}   checks: controller,   d/<id>/imu    low-pass filter
+ DeviceMotion        accelG = |a| / 9.81          ~20 Hz,       ranges, ≤ 30/s                      → eye targets
+                     calibration offset           on change     bumps idle timer                    → render 30 fps
 ```
 
 - **Topic:** `d/<id>/imu`, QoS 0, not retained, not stored. Losing an
@@ -25,6 +26,8 @@ Phone sensors ──► frontend: useOrientation()           ──MQTT QoS0─�
   changed by more than 0.5° (or once per second as a heartbeat).
 - **Mode switch:** `PUT /api/devices/:id/mode {"mode":"eyes"}` (saved +
   retained `mode` topic). Opening the Eyes tab sets it automatically.
+- Phase 1 already ships the stream, the iOS permission tap and the drag
+  pad; this phase adds everything below on top.
 
 ## B. Frontend
 
@@ -51,23 +54,20 @@ Phone sensors ──► frontend: useOrientation()           ──MQTT QoS0─�
   component that phase 4 needs.
 - Joystick fallback (drag on screen) for desktops without motion sensors.
 
-### B3. Multiple controllers
-Two phones streaming to one device would fight. The device follows the
-most recent sender (each phone's MQTT client ID is in the payload). The
-page shows "controlled by another session" when its own packets are
-being ignored.
+### B3. One controller
+A device has exactly one controlling phone (phase 1 rule), so there is no
+contention to resolve. When the turn ends (Leave, idle, midnight) the
+socket receives `{"t":"released"}` and the page says so.
 
 ## C. Backend
 
 Almost nothing new. Already covered by phase 1:
-- ACL: users may publish `d/<id>/imu` only for devices they are a member of; payload ≤ 64 bytes.
+- `/api/live` checks that the socket's session controls the device,
+  validates every reading and drops anything above 30/s per socket.
 - `PUT /mode` accepts `eyes`.
 - `POST /commands` accepts expression ops (`zod` enum).
-- Flood protection: Mosquitto has no per-client message rate limit, so
-  the frontend caps itself at 20 Hz and the device processes only the
-  newest `imu` per frame (extras are dropped from its queue). If abuse ever
-  matters, the `/mqtt` pipe in the backend can count frames per
-  connection and close floods.
+- The device only processes the newest `imu` per frame (extras are
+  dropped from its queue).
 
 ## D. Firmware: eyes mode (`modes/eyes.*`)
 
@@ -123,7 +123,7 @@ animations without the board.
 | Smoothness | ≥ 28 fps sustained in eyes mode; no visible jitter when the phone is held still |
 | iOS + Android | Permission flow works on Safari iOS and Chrome Android |
 | Loss | 30 % random packet drop (test flag) still looks smooth |
-| Security | Publishing `imu` to a device you are not a member of is rejected; payload > 64 bytes rejected |
+| Security | Tilt readings from a phone that does not control the device are refused at `/api/live`; malformed or oversized readings are dropped |
 | Idle | Closing the page → idle look-around within 2 s, sleep after 60 s |
 | Simulator | Same behaviour in Wokwi (lower fps acceptable) |
 

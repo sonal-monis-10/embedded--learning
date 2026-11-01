@@ -1,210 +1,154 @@
 # Phase 1: Foundation
 
-**Goal:** register a device on the admin page, build its firmware with one
-Docker command, and run it on real hardware **or** in Wokwi. It connects
-over encrypted MQTT, shows up as **online** on your phone, and responds to
-an "identify" command. No eyes or music yet. This phase is the plumbing
-everything else uses.
+**Goal:** flash the firmware (real board or Wokwi). On first boot it
+registers itself, connects over encrypted MQTT, and the OLED shows its
+**device ID, a pairing QR and the code**. A visitor scans it, types a
+name, and becomes the device's only controller: they pick a mode and
+**tilt their phone to move the robot eyes**. When they leave (or stay
+idle 10 minutes, or at midnight) the OLED shows a fresh QR for the next
+person.
 
-Shared design (security, data model, topics, API list): [README.md](README.md).
-
----
-
-## A. Repository restructure
-
-| # | Task | Details |
-|---|------|---------|
-| A1 | Move the PlatformIO project into `firmware/` | `git mv` `platformio.ini src include lib test tools Makefile` → `firmware/`. History is kept |
-| A2 | Update paths | `.vscode/` (PlatformIO project path), `.gitignore` (`firmware/.pio/`, `devices/*.env`, `out/`, `node_modules/`, `.env`), docs links |
-| A3 | Root `Makefile` | `make firmware DEVICE=<id> [TARGET=hw\|sim]`, `make flash DEVICE=<id> PORT=…`, `make sim DEVICE=<id>`, `make dev`, `make test` |
-| A4 | `devices/README.md` (committed) | Explains that `*.env` files here are secrets and git-ignored |
-| A5 | Scaffold `backend/` and `frontend/` | Done: Express 5 skeleton (`/healthz`, config validation, error shape, tests) and Vite + React app calling it; ESLint + shared Prettier config, `.nvmrc` (Node 24) |
+Shared design (security, data model, topics, API): [README.md](README.md),
+especially §4.2 (device lifecycle) and §4.4 (pairing).
 
 ---
 
-## B. Firmware: config, Docker build, Wokwi
+## Steps and status
 
-### B1. Build-time configuration
-
-`firmware/scripts/gen_config.py` is a PlatformIO `extra_scripts = pre:`
-script. It:
-1. Reads `DEVICE_ID`, `DEVICE_SECRET`, `BROKER_URL`, `WIFI_SSID`, `WIFI_PASS`
-   from the environment (or a file given in `DEVICE_ENV`).
-2. **Fails the build** if any are missing, if `DEVICE_ID` doesn't match
-   `^oled-[a-z0-9]{6}$`, or if `BROKER_URL` is not `wss://` (unless
-   `DEV_INSECURE=1`).
-3. Writes `.pio/build/<env>/generated/device_config.h` (outside `src/`,
-   never committed), escaping strings safely, plus `FW_VERSION`,
-   `FW_GIT_SHA` and `FW_BUILT_AT`.
-
-Why a script instead of `-DDEVICE_SECRET=\"${sysenv.DEVICE_SECRET}\"`
-in `build_flags`: proper validation, no quoting bugs, and the secret
-doesn't show up in the compiler command lines printed in logs.
-
-### B2. PlatformIO environments
-
-| Env | Display driver | Wi-Fi | Used for |
-|-----|----------------|-------|----------|
-| `hw_sh1106` (default) | SH1106 | from env file | your 1.3" module |
-| `hw_ssd1306` | SSD1306 | from env file | 0.96" modules |
-| `sim_ssd1306` | SSD1306 | forced to `Wokwi-GUEST`, no password | Wokwi. It has **no SH1106 part**, only `board-ssd1306` |
-| `scanner` | — | — | I2C scanner, unchanged |
-
-The `#ifdef USE_SH1106` code from today's `main.cpp` moves into
-`src/display/display.cpp`, so the rest of the firmware calls one
-`Display` interface and doesn't care which chip is fitted.
-
-### B3. Docker build (`firmware/Dockerfile`)
-
-```dockerfile
-# syntax=docker/dockerfile:1
-FROM python:3.12-slim AS toolchain
-RUN pip install --no-cache-dir platformio==<pinned>
-WORKDIR /fw
-COPY platformio.ini ./
-RUN pio pkg install                      # cached layer: toolchain + libraries
-
-FROM toolchain AS build
-ARG PIO_ENV=hw_sh1106
-COPY . .
-RUN --mount=type=secret,id=device_env,target=/run/secrets/device.env \
-    DEVICE_ENV=/run/secrets/device.env pio run -e "$PIO_ENV" \
- && python scripts/package.py "$PIO_ENV" /out     # merged bin + manifest
-
-FROM scratch AS export
-COPY --from=build /out/ /
-```
-
-`make firmware DEVICE=oled-7k2m9q TARGET=hw` runs:
-
-```bash
-docker build firmware/ \
-  --secret id=device_env,src=devices/oled-7k2m9q.env \
-  --build-arg PIO_ENV=hw_sh1106 \
-  --output type=local,dest=out/oled-7k2m9q
-```
-
-- `--secret` makes the env file available **only during that `RUN`**. It is
-  not stored in any image layer.
-- `--output type=local` copies the files out. No image is tagged or pushed.
-- The toolchain layer is cached, so after the first build only your code
-  recompiles.
-
-Outputs in `out/<deviceId>/`:
-
-| File | Use |
-|------|-----|
-| `firmware-merged.bin` | Bootloader + partitions + app in one file, flash at `0x0` (esptool, or Wokwi) |
-| `firmware.bin`, `bootloader.bin`, `partitions.bin` | Separate parts, if you need them |
-| `firmware.elf` | Wokwi (symbols) and debugging |
-| `manifest.json` | `deviceId, env, display, fwVersion, gitSha, builtAt`. **No secret** |
-
-### B4. Flashing and simulation
-
-- **Hardware:** `make flash DEVICE=oled-7k2m9q PORT=/dev/ttyUSB0` runs
-  `esptool.py write_flash 0x0 out/…/firmware-merged.bin`. It runs in a
-  container with `--device /dev/ttyUSB0`, or with the local esptool from
-  PlatformIO.
-- **Wokwi:** `firmware/wokwi/diagram.json` has an ESP32 DevKit V1 and a
-  `board-ssd1306` on GPIO 21/22. `make sim DEVICE=<sim-id>` writes
-  `wokwi.toml` pointing at that device's merged bin + elf, then starts the
-  simulation via the Wokwi VS Code extension or `wokwi-cli`.
-- Register simulated devices with **kind = simulator**, a separate device
-  with its own secret. The Wokwi public network gateway is monitored by
-  Wokwi. The traffic is TLS-encrypted, but keeping simulator secrets
-  separate means one is never reused on hardware.
-
-### B5. Firmware structure
-
-```
-firmware/src/
-  main.cpp              setup(): init → app.begin(); loop(): app.tick()
-  app/app.cpp/.h        state machine + fixed-rate frame loop (no delay())
-  app/events.h          queue between the network task and the loop
-  display/display.*     SH1106/SSD1306 wrapper, contrast, I2C clock fix
-  net/wifi.*            connect, back-off reconnect, RSSI
-  net/mqtt.*            esp-mqtt client: wss, CA bundle, LWT, subscribe, dispatch
-  net/protocol.*        topic names, JSON parse/serialize (ArduinoJson)
-  screens/status.*      boot / Wi-Fi / broker / auth-failed / online / identify screens
-  modes/idle.*          clock-like idle screen (phase 2+ adds eyes, music)
-```
-
-Runtime states (shown on the OLED, so problems are visible without a laptop):
-
-```
-BOOT → WIFI_CONNECTING → MQTT_CONNECTING → ONLINE ──(mode)──► IDLE / EYES / MUSIC
-           ▲     │              │   │
-           └─────┘ retry        │   └─ auth rejected → AUTH_FAILED screen (shows device ID,
-             with back-off      │      "re-register or rotate secret"), retry every 60 s
-                                └─ TLS / network error → retry with back-off
-```
-
-MQTT client details:
-- `esp-mqtt` (part of arduino-esp32 2.0.17), `uri = BROKER_URL`,
-  `crt_bundle_attach = esp_crt_bundle_attach`, `keepalive = 30`,
-  `client_id = username = DEVICE_ID`, `password = DEVICE_SECRET`.
-- LWT: topic `d/<id>/status`, payload `{"online":false}`, retained, QoS 1.
-- On connect: publish retained `status` (fw, sha, rssi, heap, mode),
-  subscribe `d/<id>/mode`, `d/<id>/cmd` (later `d/<id>/imu`, `d/<id>/music/#`).
-- `buffer_size` 16 KB (needed for lyrics timelines later).
-- Messages go into a FreeRTOS queue and are handled in `loop()`. Drawing
-  is never blocked by the network, and the network is never blocked by I2C.
-- `cmd` ops in this phase: `identify` (shows the device ID and name in large
-  text, blinks the LED for 10 s), `reboot`, `brightness`.
-- Status re-published every 60 s (RSSI, heap), so the web pages stay current.
+| # | Step | Status |
+|---|------|--------|
+| A | Repo split into `firmware/`, `backend/`, `frontend/`; backend and frontend scaffolds | **Done** |
+| C0 | Backend: MongoDB, entities, sessions, pairing codes, nightly cleanup (first model, with members and an admin-issued QR) | **Done**, being reworked in step 2 |
+| D0 | Frontend first pass: pair, home, device pages in the warm consumer world | **Done**; finish review said **rebuild** (see §D) |
+| 1 | Plan updated to the self-registering, one-phone-per-device model | **Done** (this document) |
+| 2 | Backend rework: provisioning, single controller, release, `/api/live` | Next |
+| 3 | Mosquitto inside the backend container | |
+| 4 | Firmware: provisioning, MQTT, pairing screen, eyes | |
+| 5 | Frontend rebuild for the new flow, with the review fixes | |
+| E | Deploy on Render | Last |
 
 ---
 
-## C. Backend (`backend/`)
+## Step 2. Backend rework
 
-### C1. Stack
+### 2.1 Provisioning (`routes/admin.js`)
+
+`POST /api/admin/devices` with `X-Provision-Key`:
+
+```http
+POST /api/admin/devices
+X-Provision-Key: ••••••••
+{"kind": "hardware", "display": "sh1106", "fw": {"version": "0.1.0", "gitSha": "a1b2c3d"}}
+
+201 Created
+{"deviceId": "oled-7k2m9q", "secret": "Qm9…43 chars…", "brokerUrl": "wss://…/mqtt"}
+```
+
+- The server generates the ID and secret; the firmware never chooses them.
+- Refused when `MAX_DEVICES` is reached (`409 device_limit`), and
+  rate-limited to 5 per minute per IP.
+- Simulators must use `ssd1306` (Wokwi has no SH1106 part).
+- Wi-Fi is gone from the server: no Wi-Fi fields, no `.env` download.
+- The other admin routes stay behind `X-Admin-Key`: list, details +
+  events, delete, rotate secret (the device re-provisions on next boot),
+  release, run cleanup.
+
+### 2.2 One controller per device (`entity/device.js`, `routes/pairing.js`)
+
+- `members[]` becomes `controller: {user, since, lastActiveAt} | null`.
+  A unique sparse index on `controller.user` makes "a phone controls one
+  device" a database rule.
+- `PairingCode` loses `role` and `createdBy`: every code means "become
+  the controller of this free device".
+- `POST /api/pair`: redeem the code atomically; release the phone's
+  previous device; set the controller **only if the device is still free**
+  (atomic `findOneAndUpdate` on `controller: null`); clear the device's
+  pairing message. Two phones racing for the same device: one wins, the
+  other gets `device_taken`.
+- Removed: member pairing codes, member removal, owner/member roles,
+  `/api/mqtt-credentials`.
+
+### 2.3 Release (`utils/turns.js`)
+
+`release(deviceId, reason)` clears the controller, records a `released`
+event (`left`, `idle`, `logout`, `admin`, `cleanup`), notifies the phone
+over `/api/live`, and hands the device to the pairing-code issuer. Called
+by:
+- `POST /api/devices/:id/leave` and `POST /api/logout`;
+- a one-minute check: `controller.lastActiveAt` older than
+  `IDLE_RELEASE_MIN` (default 10); every tilt batch and mode change bumps
+  `lastActiveAt` (tilt at most once every 10 s, to keep writes low);
+- the nightly cleanup (all devices at once).
+
+### 2.4 Pairing codes for free devices (`utils/pairingIssuer.js`)
+
+For every device that is online and has no controller: issue a code and
+publish retained `d/<id>/pairing`; issue a new one 15 s before the
+current one expires. Triggered by "device came online", "device
+released", and a 15-second sweep (covers a restarted backend). When the
+device is taken or goes offline, publish an empty retained message to
+clear it. Until step 3 lands, publishing is a no-op behind the same
+interface, so the logic and its tests are done in step 2.
+
+### 2.5 `/api/live` WebSocket (`live/server.js`)
+
+- Upgrade on the existing HTTP server at `/api/live` (the `ws` package).
+- The first message must be `{"t":"auth","token":"…"}` within 5 s; the
+  token is a session for the controller of a device, else close `4401`.
+  (Tokens in the URL would land in logs.)
+- Phone → server: `{"t":"imu","v":[pitch,roll,accelG,seq]}`. Validated
+  (numbers, ranges), throttled to 30/s per socket, forwarded to
+  `d/<id>/imu`.
+- Server → phone: `{"t":"status","online":…,"mode":…}` on connect and on
+  change; `{"t":"released","reason":"idle"}` before closing when a turn ends.
+- Pings every 25 s keep Render's proxy and the free instance awake.
+
+### 2.6 Tests
+
+Provisioning (key, limit, rate limit, simulator display rule); pairing
+(only free devices, atomic race, previous device released, same error for
+wrong/used/expired codes); release (leave, logout, idle timer with a fake
+clock, cleanup); issuer (issues for free+online, re-issues before expiry,
+clears when taken); `/api/live` (auth timeout, wrong device, readings
+forwarded, throttle, released message).
+
+---
+
+## Step 3. Mosquitto in the backend container
+
+### 3.1 Stack
 
 | Concern | Choice |
 |---------|--------|
-| Runtime | Node.js 24 LTS, ES modules (`"type": "module"`) |
-| HTTP | Express 5, `helmet`, `cors` |
-| MQTT broker | **Mosquitto 2.x** (Alpine package, version pinned) + Dynamic Security plugin, started by the backend as a child process |
-| MQTT client (backend) | `mqtt` (MQTT.js): admin client for `$CONTROL`, presence/publisher client |
+| Broker | **Mosquitto 2.x** (Alpine package, version pinned) + Dynamic Security plugin, started by the backend as a child process |
+| Backend MQTT client | `mqtt` (MQTT.js): an admin client for `$CONTROL` and a backend client for publish/subscribe |
 | `/mqtt` pipe | `node:http` `upgrade` event → `node:net` socket to 127.0.0.1:9001, piped both ways |
 | Container | `backend/Dockerfile`: `node:24-alpine` + `apk add mosquitto`; Render **Docker** runtime |
-| DB | `mongoose` (one schema per entity in `entity/`) |
-| Validation | `zod` (request bodies, env config, MQTT payloads from browsers) |
-| Auth | No passwords. `node:crypto` random tokens (sessions, pairing codes) stored as SHA-256 hashes; `ADMIN_KEY` checked with `timingSafeEqual` |
-| Scheduling | Nightly cleanup: `Intl` date in `Asia/Kolkata` + a 15-min check (catches up after the free instance slept) |
-| Logging | `pino` (JSON logs, readable in Render's log view) |
-| Rate limits | `express-rate-limit` |
-| Tests | `node:test`, `supertest`, `mongodb-memory-server`, `mqtt` (as a test client) |
 
-### C2. Startup (`server.js` → `createApp()` in `app.js`)
+### 3.2 Startup order
 
-1. Parse and validate env (`utils/config.js`); exit with a clear message if
-   anything is missing (including a `SECRETS_KEY` that isn't 32 bytes).
-2. Connect to MongoDB with Mongoose (in `app.js`); indexes come from the `entity/` schemas.
-3. **Start Mosquitto** (`mqtt/supervisor.js`): write a fresh dynsec config
-   with only the admin user (`mosquitto_ctrl dynsec init`), then spawn
-   `mosquitto -c mosquitto/mosquitto.conf`. Its stdout is read line by line
-   for logging and for failed-login detection.
-4. **Sync logins** (`mqtt/sync.js`): the admin client connects to
-   127.0.0.1:1883, creates roles `device` and `backend`, then for every
-   device `createClient` (secret decrypted in memory only) and for every
-   user a role `user-<userId>`. Commands are sent in batches.
-5. Backend publisher connects; re-publishes retained `mode` (and later
-   music state) from MongoDB; subscribes `d/+/status`.
-6. Create the Express app; mount routes. `/healthz` returns `503` until
-   steps 3–5 are done.
-7. One `http.createServer(app)`. On `upgrade` with path `/mqtt` → pipe to
-   127.0.0.1:9001 (`mqtt/proxy.js`). Other upgrade paths → closed.
-8. Listen on `process.env.PORT` (Render sets it).
-9. On `SIGTERM` (Render deploys): stop accepting connections, stop
-   Mosquitto (`SIGTERM`, wait), close Mongo. Devices reconnect to the new instance.
+1. Validate env; connect MongoDB.
+2. **Start Mosquitto** (`mqtt/supervisor.js`): fresh dynsec config with
+   only the admin user (`mosquitto_ctrl dynsec init`), then spawn
+   `mosquitto -c mosquitto/mosquitto.conf`; stdout is read line by line
+   for logs and failed-login detection.
+3. **Sync logins** (`mqtt/sync.js`): roles `device` and `backend`, then
+   `createClient` for every device (secret decrypted in memory only),
+   in batches.
+4. Backend client connects, subscribes `d/+/status`, re-publishes
+   retained `mode` from MongoDB, and starts the pairing-code issuer.
+5. Mount routes; `/healthz` returns `503` until steps 2–4 are done.
+6. One HTTP server: `/mqtt` → pipe to Mosquitto, `/api/live` → the
+   phone WebSocket, everything else → Express.
+7. `SIGTERM`: stop accepting, close sockets, stop Mosquitto, close Mongo.
 
-### C3. Mosquitto config (`backend/mosquitto/mosquitto.conf`)
+### 3.3 `backend/mosquitto/mosquitto.conf`
 
 ```conf
 per_listener_settings false
 allow_anonymous false
 plugin /usr/lib/mosquitto_dynamic_security.so
-plugin_opt_config_file /tmp/dynsec.json   # rebuilt on every start, MongoDB is the truth
+plugin_opt_config_file /tmp/dynsec.json   # rebuilt on every start; MongoDB is the truth
 
 listener 9001 127.0.0.1
 protocol websockets
@@ -221,141 +165,159 @@ log_type information
 connection_messages true
 ```
 
-### C4. Dynamic Security operations (`mqtt/dynsec.js`)
+### 3.4 Dynamic Security operations (`mqtt/dynsec.js`)
 
-| Backend event | Commands sent to `$CONTROL/dynamic-security/v1` |
-|---------------|-------------------------------------------------|
-| Startup | `createRole device` (ACLs with `%u`), `createRole backend`, then per device `createClient`, per user `createRole user-<id>` |
-| Device added | `createClient {username: deviceId, password, roles: [device]}` + `addRoleACL` on the owner's `user-<id>` role (`status` subscribe, `imu` publish, `mode`/`cmd`/`music/#` subscribe) |
-| Device deleted | `deleteClient` (disconnects it) + `removeRoleACL` from the owner's role |
-| Secret rotated | `deleteClient` + `createClient` with the new secret |
-| `/api/mqtt-credentials` | `createClient s-<sessionId>` (or `setClientPassword` if it exists) with a new random password, role `user-<userId>` |
-| Logout / session revoked | `deleteClient s-<sessionId>` |
-| Member added / removed | `addRoleACL` / `removeRoleACL` on that user's role |
-| Nightly cleanup | `deleteClient` every `s-*` client, `deleteRole` every `user-*` role |
+| Backend event | Commands to `$CONTROL/dynamic-security/v1` |
+|---------------|---------------------------------------------|
+| Startup | `createRole device` (ACLs with `%u`), `createRole backend`, `createClient` per device |
+| Device provisioned | `createClient {username: deviceId, password, roles: [device]}`; if it fails, the device record is deleted again |
+| Device deleted / secret rotated | `deleteClient` (disconnects it) |
 
-Every command checks the response on `$CONTROL/dynamic-security/v1/response`
-and raises an error if it fails. The API call that triggered it then
-fails too, so MongoDB and Mosquitto never disagree silently.
+Every command waits for its response on
+`$CONTROL/dynamic-security/v1/response` and fails loudly, so MongoDB and
+Mosquitto never disagree silently.
 
-Presence (`mqtt/presence.js`):
-- `d/+/status` with `online: true` → `devices.online = true`, `lastSeenAt`, `fw`, `net`, event `connect`.
-- `{online: false}` (Last Will, or a clean shutdown) → `online = false`, event `disconnect`.
-- Mosquitto log line `Client <id> … not authorised` → event `auth_fail`
-  (throttled to one per device per minute).
-- On backend start: every device is set to `online = false`; clients reconnect within seconds and set it back.
+### 3.5 Presence (`mqtt/presence.js`)
 
-### C5. Routes in this phase
-
-> **Status (2026-11-01):** done except the Mosquitto parts. Admin, pairing,
-> device and cleanup routes are implemented and tested (63 tests); the places
-> that will talk to Mosquitto are marked `// TODO(mqtt):` in the code.
-> `GET /api/mqtt-credentials`, `POST /api/devices/:id/commands` and
-> `/messages` come with the broker.
-
-All routes from README §7 marked **phase 1**, one router file each,
-mounted in `app.js`:
-
-| File | Mounted at | Middleware in `app.js` |
-|------|-----------|------------------------|
-| `routes/health.js` | `/healthz` | — |
-| `routes/admin.js` | `/api/admin` | `requireAdmin` (`X-Admin-Key`), rate limit on failures |
-| `routes/pairing.js` | `/api` (`/pair`, `/me`, `/logout`, `/mqtt-credentials`) | `optionalSession` on `/pair`, `requireSession` on the rest |
-| `routes/devices.js` | `/api/devices` | `requireSession`; `requireMember` / `requireOwner` per route |
-
-New entities: `entity/session.js`, `entity/pairingCode.js`,
-`entity/deviceEvent.js`; `entity/device.js` changes `owner` into
-`members: [{user, role, joinedAt}]`.
-
-Example: registering a device (Wi-Fi entered in the same form):
-
-```http
-POST /api/admin/devices
-X-Admin-Key: ••••••••
-{"kind": "hardware", "display": "sh1106",
- "wifi": {"ssid": "HomeWiFi", "password": "••••••••"}}
-
-201 Created
-{
-  "device": {"id": "oled-7k2m9q", "kind": "hardware", "display": "sh1106",
-             "wifi": {"ssid": "HomeWiFi"}, "members": [],
-             "online": false, "lastSeenAt": null},
-  "envFile": "DEVICE_ID=oled-7k2m9q\nDEVICE_SECRET=Qm9…\nBROKER_URL=wss://…/mqtt\nWIFI_SSID=HomeWiFi\nWIFI_PASS=…\n"
-}
-```
-
-Steps inside: validate → generate ID + 32-byte secret → encrypt secret and
-Wi-Fi password → insert into MongoDB → dynsec `createClient`. If the
-dynsec step fails, the MongoDB insert is rolled back.
-
-Example: pairing a phone (the admin page made the code, the phone scanned it):
-
-```http
-POST /api/pair
-{"code": "K3F9QXW2", "name": "Sonal"}
-
-200 OK
-{
-  "sessionToken": "Zk1…43 chars…",            ← stored on the phone, valid until 00:00 IST
-  "user": {"id": "6724…", "name": "Sonal"},
-  "device": {"id": "oled-7k2m9q", "name": "Sonal's OLED", "role": "owner", "online": true}
-}
-```
-
-Codes are 8 characters from an alphabet without look-alikes (no `0/O`,
-`1/I/L`), so they can also be typed if a camera won't scan. Wrong or used
-codes all return the same `invalid_code` error. Brute force is blocked by
-the rate limit: 8 characters from 31 symbols is about 850 billion
-combinations against 10 tries per minute.
-
-Wi-Fi validation: SSID 1–32 bytes, password empty (open network) or 8–63
-characters (WPA2 rule). Simulator devices get `Wokwi-GUEST` / empty password
-automatically.
-
-Example: testing without the UI:
-
-```bash
-curl -X POST "$API/api/devices/oled-7k2m9q/messages" \
-  -H "Authorization: Bearer $SESSION_TOKEN" -H "Content-Type: application/json" \
-  -d '{"topic":"cmd","payload":{"op":"identify"}}'
-```
-
-### C6. Scripts
-
-- `scripts/mqtt-smoke.js --env devices/<id>.env`: connects **as that device**
-  from your laptop with MQTT.js, publishes a status, and prints every
-  message it receives. Lets you test the backend before any firmware exists.
+- `d/+/status` `online: true` → `online`, `lastSeenAt`, `fw`, `net`, event `connect`; the issuer is told.
+- `{online: false}` (Last Will or clean shutdown) → `online = false`, event `disconnect`.
+- Mosquitto log `Client <id> … not authorised` → event `auth_fail`, throttled.
+- On backend start every device is `online = false` until it reconnects.
 
 ---
 
-## D. Frontend (`frontend/`)
+## Step 4. Firmware
 
-### D1. Stack
+### 4.1 Build configuration
 
-Vite + React (JavaScript), `react-router`, `mqtt` (MQTT.js browser build),
-`qrcode` (pairing QR). Plain CSS modules, mobile-first. No UI framework
-needed yet.
+`firmware/firmware.env` (git-ignored; values are JSON strings):
 
-### D2. Pages in this phase
+```env
+PROVISION_KEY="…"
+API_URL="https://oled-backend.onrender.com"
+BROKER_URL="wss://oled-backend.onrender.com/mqtt"
+WIFI_SSID="HomeWiFi"
+WIFI_PASS="…"
+```
+
+`firmware/scripts/gen_config.py` (PlatformIO `extra_scripts = pre:`)
+reads it, **fails the build** on a missing value or a non-`https`/`wss`
+URL (unless `DEV_INSECURE=1` for a local backend), and writes
+`.pio/build/<env>/generated/build_config.h` with the values escaped,
+plus `FW_VERSION`, `FW_GIT_SHA`, `FW_BUILT_AT`. Secrets stay out of
+compiler command lines and logs. The simulator env forces Wokwi-GUEST.
+
+| Env | Display | Used for |
+|-----|---------|----------|
+| `hw_sh1106` (default) | SH1106 | your 1.3" module |
+| `hw_ssd1306` | SSD1306 | 0.96" modules |
+| `sim_ssd1306` | SSD1306 | Wokwi (no SH1106 part) |
+| `scanner` | — | I2C scanner, unchanged |
+
+### 4.2 Docker build (`firmware/Dockerfile`)
+
+```dockerfile
+# syntax=docker/dockerfile:1
+FROM python:3.12-slim AS toolchain
+RUN pip install --no-cache-dir platformio==<pinned>
+WORKDIR /fw
+COPY platformio.ini ./
+RUN pio pkg install                      # cached layer: toolchain + libraries
+
+FROM toolchain AS build
+ARG PIO_ENV=hw_sh1106
+COPY . .
+RUN --mount=type=secret,id=firmware_env,target=/run/secrets/firmware.env \
+    FIRMWARE_ENV=/run/secrets/firmware.env pio run -e "$PIO_ENV" \
+ && python scripts/package.py "$PIO_ENV" /out     # merged bin + manifest
+
+FROM scratch AS export
+COPY --from=build /out/ /
+```
+
+`make firmware TARGET=hw` (or `sim`) runs `docker build` with
+`--secret id=firmware_env,src=firmware/firmware.env` and
+`--output type=local,dest=out/<target>`. The secret file is mounted only
+for that `RUN` and never stored in a layer; no image is pushed. Outputs:
+`firmware-merged.bin` (flash at `0x0`, also what Wokwi loads),
+`firmware.elf`, `manifest.json` (env, display, version, git SHA; no
+secrets). `make flash PORT=/dev/ttyUSB0` and `make sim` (Wokwi diagram
+with an ESP32 DevKit V1 and `board-ssd1306` on GPIO 21/22).
+
+One build serves any number of boards: every board provisions its own
+ID and secret on first boot.
+
+### 4.3 Structure
+
+```
+firmware/src/
+  main.cpp              setup(): init → app.begin(); loop(): app.tick()
+  app/app.*             state machine + fixed-rate frame loop (no delay())
+  app/events.h          queue between the network task and the loop
+  display/display.*     SH1106/SSD1306 wrapper, I2C clock fix
+  net/wifi.*            connect, back-off reconnect, RSSI
+  net/provision.*       first-boot HTTPS call, credentials in NVS (Preferences)
+  net/mqtt.*            esp-mqtt over wss, CA bundle, LWT, subscribe, dispatch
+  net/protocol.*        topic names, JSON parse (ArduinoJson)
+  screens/status.*      boot / Wi-Fi / setting up / connecting / error screens
+  screens/pairing.*     device ID + QR (QR library) + the code
+  modes/eyes.*          robot eyes driven by imu readings, idle wander without them
+  modes/idle.*          resting screen
+```
+
+### 4.4 States (each shown on the OLED, so problems are visible without a laptop)
+
+```
+BOOT → WIFI ─► no credentials in NVS? → PROVISIONING (POST /api/admin/devices)
+                                         ├─ ok → save ID + secret → MQTT
+                                         └─ error → "Setup failed" + reason, retry 60 s
+      └─► MQTT_CONNECTING ─► auth rejected → erase NVS → PROVISIONING
+                          └─► ONLINE ─► pairing message present → PAIRING screen
+                                                                   (ID, QR, code)
+                                     └─► pairing cleared → current mode
+                                         (eyes follow imu; no readings for 2 s → wander)
+```
+
+MQTT: `esp-mqtt` (arduino-esp32 2.0.17), `crt_bundle_attach`, keep-alive
+30 s, `client_id = username = deviceId`, LWT `{"online":false}` retained
+on `d/<id>/status`; subscribes `pairing`, `mode`, `cmd`, `imu`;
+`buffer_size` 16 KB. Incoming messages go through a FreeRTOS queue, so
+drawing never waits on the network.
+
+Pairing screen on 128×64: device ID in small text across the top, a QR
+(version 3, 29×29 modules at 2 px = 58 px) on the left, the code split
+as `K3F9-QXW2` on the right. The QR holds the full URL
+`https://<frontend>/pair/<code>` (about 55 characters, fits version 3
+at error level L at 2 px).
+
+---
+
+## Step 5. Frontend rebuild
+
+The finish review of the first pass returned **rebuild**. This step
+applies its findings to the new flow.
 
 | Route | Page | Content |
 |-------|------|---------|
-| `/` | Home | Paired: your devices. Not paired: "Scan a device's pairing QR to start" |
-| `/pair/:code` | Pair | Opened by the phone's camera from the QR. Asks **"Your name?"**, then `POST /api/pair` → device page. Also has a field to type a code by hand |
-| `/devices/:id` | Device (phone) | Status, **Identify**, **Reboot**, brightness, mode selector (only `idle` this phase); owner only: rename, **Add phone** (shows a member QR, 2 min countdown), members list with remove |
-| `/admin` | Admin | Asks for the `ADMIN_KEY` once (kept in localStorage, **Forget key** button). Device list: ID, kind badge, status dot (never seen / online / offline since …), fw, RSSI, members. Per device: **Pair** (owner QR), **Download .env**, Wi-Fi edit ("rebuild needed" badge), rotate secret, delete, recent events. **Run cleanup now** button |
-| `/admin/devices/new` | Add device | Form: kind (hardware / simulator), display (SH1106 / SSD1306), **Wi-Fi SSID + password** (show/hide toggle; hidden and pre-filled for simulators). Submit → "Download .env" + copy-paste build command (`make firmware DEVICE=…`), a note that the file is a secret, and the device's **Pair** QR |
+| `/pair/:code`, `/pair` | Pair | Name field (and a code field on `/pair`), **Start playing**. Errors: wrong/used/expired code, `device_taken` ("Someone else just took this screen; wait for a new code") |
+| `/` | Home | Your device (one) or how to start: "Scan the QR code on the screen" |
+| `/devices/:id` | Play | Screen mirror; mode (Idle, Eyes, Music); **Eyes**: "Start tilt control" (iOS permission tap), a drag pad as the non-motion alternative, live status; **Leave** |
 
-### D3. Plumbing
-
-- `services/client.js`: adds the session token (or the admin key on
-  `/api/admin/*`). On `401` it clears the token and shows "Session ended,
-  scan a pairing QR again" (expected after midnight).
-- `mqtt/useMqtt.js`: gets this session's MQTT username/password from
-  `/api/mqtt-credentials`, connects, and subscribes to `d/<id>/status` for
-  the user's devices. If the broker rejects the login (backend restarted,
-  session revoked), it fetches new credentials once before reconnecting.
-- Build-time env: `VITE_API_URL`, `VITE_MQTT_URL`.
+Review fixes carried in:
+1. The screen mirror becomes truly pixel-drawn: integer pixel runs on the
+   128×64 grid, no rounded vectors, drawn at an integer scale (e.g.
+   256×128 CSS px), frames taken from the firmware's own drawing code.
+2. No eyebrow labels above headings (a brand wordmark, if any, sits in a
+   top row of its own).
+3. Hover styles only under `@media (hover: hover)`, so taps don't leave
+   buttons stuck in their hover colour.
+4. Mode labels: Idle, Eyes, Music (approved names); no extra hint lines.
+5. A larger greeting, closer to the world's display size; mode tiles get
+   mini mirror thumbnails.
+6. Secondary text on tinted surfaces is tinted from that surface.
+7. The pair page cannot name the device before pairing (codes are only
+   checked when redeemed); its copy says "the screen in front of you",
+   and the device name appears right after.
 
 ---
 
@@ -363,50 +325,35 @@ needed yet.
 
 | # | Task |
 |---|------|
-| E1 | MongoDB Atlas: create database `oled`, a DB user with access to that database only, network access `0.0.0.0/0` (Render has no fixed outgoing IP) |
-| E2 | `render.yaml` Blueprint: `oled-backend` (web, **runtime docker**, `dockerfilePath: backend/Dockerfile`, plan free, `healthCheckPath: /healthz`) and `oled-frontend` (static, `rootDir: frontend`, publish `dist`, rewrite `/* → /index.html`) |
-| E3 | Render env vars: `MONGODB_URI`, `MONGODB_DB`, `ADMIN_KEY`, `SECRETS_KEY` (set by you, backed up), `MQTT_ADMIN_PASSWORD`, `MQTT_BACKEND_PASSWORD` (generated), `CORS_ORIGIN`, `PUBLIC_MQTT_URL`, `CLEANUP_TZ` |
-| E4 | `docker-compose.yml` for local dev (backend + frontend, optional local `mongo` container) |
-| E5 | GitHub Actions: backend lint + tests, frontend build, firmware Docker build for all 3 envs with a dummy CI device env |
+| E1 | MongoDB Atlas: database `oled`, a DB user limited to it, network access `0.0.0.0/0` (Render has no fixed outgoing IP) |
+| E2 | `render.yaml`: `oled-backend` (web, **runtime docker**, `dockerfilePath: backend/Dockerfile`, plan free, `healthCheckPath: /healthz`) and `oled-frontend` (static, `rootDir: frontend`, publish `dist`, rewrite `/* → /index.html`) |
+| E3 | Render env vars: `MONGODB_URI`, `MONGODB_DB`, `PROVISION_KEY`, `ADMIN_KEY`, `SECRETS_KEY` (set by you, backed up), `MQTT_ADMIN_PASSWORD`, `MQTT_BACKEND_PASSWORD` (generated), `CORS_ORIGIN`, `PUBLIC_MQTT_URL`, `CLEANUP_TZ`, `IDLE_RELEASE_MIN`, `MAX_DEVICES` |
+| E4 | `docker-compose.yml` for local dev (backend + frontend, optional local `mongo`) |
+| E5 | GitHub Actions: backend tests, frontend build, firmware Docker build for all envs with a dummy `firmware.env` |
 
 ---
 
-## F. Tests
+## Done when
 
-| Area | Test |
-|------|------|
-| Admin | Wrong/missing `X-Admin-Key` → 401 on every `/api/admin` route; failures rate-limited |
-| Pairing | Admin code makes the scanner owner; owner code makes a member; a code works once and expires after 2 min; wrong, used and expired codes give the same error; a phone with a session reuses its user; non-owner can't create codes |
-| Cleanup | After cleanup: users, sessions, codes, events gone, devices keep ID/secret/Wi-Fi but lose members/name/mode, browser MQTT logins removed. A session from yesterday is rejected even if cleanup hasn't run yet. Cleanup runs on startup if the scheduled one was missed |
-| Devices | Create with Wi-Fi → env file contains it; `GET` never returns the secret or Wi-Fi password; MongoDB holds only encrypted values; `.env` download requires the password again; another user gets `404`; rotate invalidates the old secret; delete disconnects a live client |
-| Broker (real Mosquitto in tests) | Device connects with correct secret; rejected with wrong secret or unknown ID; anonymous rejected; device can't publish to another device's topics or subscribe to `#`; user session can't subscribe to a device they don't own; revoked session's MQTT login stops working; Mosquitto ports not reachable from outside the container |
-| Sync | Kill and restart the container → all device logins rebuilt from MongoDB, devices reconnect without a rebuild; a failed dynsec command makes the API call fail and rolls back MongoDB |
-| Presence | Connect → online; kill the socket without disconnecting → LWT → offline; backend restart → devices back online after reconnect |
-| Firmware build | Build fails with a missing secret, a malformed ID, or a `ws://` URL; manifest contains no secret (`grep` check in CI) |
-| End to end | Real board and Wokwi both reach ONLINE; Identify from the phone shows the ID on the OLED within 1 s |
+- [ ] Flashing the same build on a real board and in Wokwi: each registers itself and shows its own ID, QR and code.
+- [ ] Scanning the QR with a phone, typing a name and tapping **Start playing** takes over the device; the QR disappears and the eyes appear.
+- [ ] Tilting the phone moves the eyes; the drag pad does too.
+- [ ] Pairing a second device from the same phone frees the first, which shows a new QR.
+- [ ] **Leave**, 10 minutes idle, and the midnight cleanup each free the device and bring back a fresh QR.
+- [ ] A second phone scanning while someone plays sees no QR; racing for the same code, only one wins.
+- [ ] Wrong provision key, device limit, rotated secret and deleted device are all refused and recorded.
+- [ ] Unplugging Wi-Fi or redeploying the backend: the device shows its reconnecting state and recovers; the player's turn survives.
+- [ ] Backend and frontend deployed on Render from `render.yaml`.
+- [ ] No secrets in git or logs.
 
----
-
-## G. Done when
-
-- [ ] Repo is split into `firmware/`, `backend/`, `frontend/`; old `make oled` workflow still works inside `firmware/`.
-- [ ] Backend and frontend are deployed on Render from `render.yaml`.
-- [ ] With the admin key you can register a device, download its `.env`, run `make firmware`, and flash the result. The device appears **online** on the admin page.
-- [ ] The same flow works for a **simulator** device in Wokwi.
-- [ ] A phone scans the device's pairing QR, enters a name, and controls it: **Identify** works on the board and in Wokwi. A second phone joins through the owner's **Add phone** QR.
-- [ ] After the midnight cleanup (or **Run cleanup now**) the phones must scan again, and the devices stay online.
-- [ ] Wrong secret / rotated secret / deleted device are all rejected and shown in device events.
-- [ ] Unplugging Wi-Fi or redeploying the backend: the device shows its reconnecting state and recovers by itself.
-- [ ] No secrets in git (`git grep` + CI check), no secrets in logs.
-
-## H. Risks
+## Risks
 
 | Risk | Mitigation |
 |------|------------|
-| TLS handshake on ESP32 takes 1–3 s and ~40 KB RAM | Fine on ESP32. Measure free heap after connect and show it in `status` |
-| Mosquitto and MongoDB disagree (e.g. a crash between the two writes) | MongoDB is the truth; every startup rebuilds Mosquitto from it. An admin "re-sync" button on the admin page forces the same at runtime |
-| Losing `SECRETS_KEY` makes stored secrets unreadable | Back it up outside Render. Recovery path: rotate every device's secret and rebuild |
-| Two processes in one container | Backend supervises Mosquitto (restart on exit, health check fails until both are up). Render restarts the container on repeated failure |
-| Mosquitto package version changes on Alpine updates | Pin the package version in the Dockerfile; tests run against the same image |
-| Render free cold start (~1 min) after everything was off | Device shows "connecting" and retries with back-off. The web app shows "waking server…" |
-| Wokwi public gateway is slow/unstable at times | Simulation is for development, not timing tests; hardware is the reference |
+| `PROVISION_KEY` extracted from a firmware binary | It can only register devices: rate limit, `MAX_DEVICES` cap, and it can be replaced without touching registered devices |
+| TLS handshake on ESP32 takes 1–3 s and ~40 KB RAM | Fine on ESP32; free heap reported in `status` |
+| Tilt latency over Render (~100–200 ms round trip) | Eyes ease toward targets on the device, so jitter and gaps don't show |
+| Mosquitto and MongoDB disagree after a crash | MongoDB is the truth; every startup rebuilds Mosquitto from it |
+| Losing `SECRETS_KEY` | Back it up; recovery is rotating every device (they re-provision) |
+| Render free cold start (~1 min) | Device shows "connecting" with back-off; phone shows "waking up the server" |
+| Wokwi public gateway is slow at times | Simulation is for development; hardware is the reference |

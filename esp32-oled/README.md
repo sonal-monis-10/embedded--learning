@@ -10,9 +10,9 @@ An ESP32 with a 1.3" OLED that you control from your phone: robot eyes that foll
 
 ## What is this?
 
-Three parts that work together: **firmware** for an ESP32 with an SH1106 OLED (or a Wokwi simulation), a **backend** on Render that registers devices and hosts the MQTT broker, and a **frontend** where a phone pairs with a device by scanning a QR code. There are no accounts: you type a name when you pair, and all people data is wiped every night at 00:00 IST.
+Three parts that work together: **firmware** for an ESP32 with an SH1106 OLED (or a Wokwi simulation), a **backend** on Render that registers devices and hosts the MQTT broker, and a **frontend** where a phone pairs with a device by scanning a QR code. The OLED shows its own pairing QR; there are no accounts: you type a name when you pair, one person plays at a time, and all people data is wiped every night at 00:00 IST.
 
-**Status:** phase 1 of 4 ([plan](docs/plan/README.md)). Done so far: the OLED demo firmware and the backend API, covering device registration, QR pairing, sessions and the nightly cleanup. Still to come in phase 1: the frontend pages, the Mosquitto broker, the firmware's network connection and the Render deploy.
+**Status:** phase 1 of 4 ([plan](docs/plan/README.md)). Done so far: the OLED demo firmware, the backend API (sessions, pairing codes, nightly cleanup) and a first pass of the phone app. In progress: devices that register themselves and show their pairing QR on the OLED, one phone per device, and robot eyes driven by the phone's tilt; then the Mosquitto broker, the firmware's network code and the Render deploy.
 
 ```mermaid
 graph LR
@@ -53,13 +53,8 @@ make dev-backend    # http://localhost:8080/healthz
 make dev-frontend   # http://localhost:5173
 ```
 
-Register a device and get its `.env` file for the firmware build:
-
-```bash
-curl -X POST localhost:8080/api/admin/devices \
-  -H "X-Admin-Key: <your ADMIN_KEY>" -H "Content-Type: application/json" \
-  -d '{"kind":"simulator","display":"ssd1306"}'
-```
+Devices register themselves on first boot with the `PROVISION_KEY` built
+into their firmware (being built now, see the [phase 1 plan](docs/plan/phase-1-foundation.md)).
 
 Flash the current OLED demo to a board on USB:
 
@@ -88,7 +83,6 @@ esp32-oled/
 │   ├── utils/        config, logger, secrets (AES-GCM), time zones, nightly cleanup
 │   ├── app.js        MongoDB connection, middleware, route mounting
 │   └── server.js     entry point, graceful shutdown, cleanup schedule
-├── devices/          device .env files from the admin API (git-ignored secrets)
 ├── docs/             guides, architecture diagram, project plan
 ├── firmware/         PlatformIO project for the ESP32
 │   ├── src/          main.cpp: OLED demo (SH1106 / SSD1306)
@@ -110,4 +104,3 @@ esp32-oled/
 | [docs/how-main-works.md](docs/how-main-works.md) | Walk-through of the OLED demo firmware |
 | [docs/display-ram.md](docs/display-ram.md) | OLED memory layout, pixel formula, raw I2C commands |
 | [docs/README.md](docs/README.md) | Reading list: datasheets, I2C, libraries |
-| [devices/README.md](devices/README.md) | What a device `.env` file holds and why it is secret |
