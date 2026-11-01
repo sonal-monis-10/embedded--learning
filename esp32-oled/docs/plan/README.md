@@ -410,6 +410,7 @@ Base: `https://<backend>.onrender.com/api`. JSON.
 | **Admin** | | |
 | `GET /api/admin/devices` 🛠 | all devices with online / last seen / fw / members | 1 |
 | `POST /api/admin/devices` 🛠 | `{kind, display, wifi: {ssid, password}}` → `{device, envFile}` | 1 |
+| `GET /api/admin/devices/:id` 🛠 | one device with members and its last 50 events | 1 |
 | `PATCH /api/admin/devices/:id` 🛠 | change Wi-Fi `{wifi: {ssid, password}}` (needs a rebuild) | 1 |
 | `DELETE /api/admin/devices/:id` 🛠 | remove + disconnect | 1 |
 | `POST /api/admin/devices/:id/rotate-secret` 🛠 | new secret, old one disconnected → new env file | 1 |

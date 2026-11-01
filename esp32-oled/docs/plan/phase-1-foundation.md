@@ -247,6 +247,12 @@ Presence (`mqtt/presence.js`):
 
 ### C5. Routes in this phase
 
+> **Status (2026-11-01):** done except the Mosquitto parts. Admin, pairing,
+> device and cleanup routes are implemented and tested (64 tests); the places
+> that will talk to Mosquitto are marked `// Mosquitto step:` in the code.
+> `GET /api/mqtt-credentials`, `POST /api/devices/:id/commands` and
+> `/messages` come with the broker.
+
 All routes from README §7 marked **phase 1**, one router file each,
 mounted in `app.js`:
 

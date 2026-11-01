@@ -2,6 +2,7 @@ import http from 'node:http';
 import { loadConfig } from './utils/config.js';
 import { createLogger } from './utils/logger.js';
 import { createApp, closeDatabase } from './app.js';
+import { startCleanupSchedule } from './utils/cleanup.js';
 
 let config;
 try {
@@ -27,10 +28,14 @@ server.listen(config.port, () => {
   logger.info({ port: config.port, env: config.env }, 'backend listening');
 });
 
+// Nightly cleanup at 00:00 in CLEANUP_TZ (also catches up after a sleep).
+const stopCleanup = startCleanupSchedule({ timeZone: config.cleanupTz, logger });
+
 // Render sends SIGTERM before replacing the instance on a deploy. Stop
 // accepting connections, let in-flight requests finish, close MongoDB, exit.
 function shutdown(signal) {
   logger.info({ signal }, 'shutting down');
+  stopCleanup();
   server.close(async () => {
     await closeDatabase();
     process.exit(0);

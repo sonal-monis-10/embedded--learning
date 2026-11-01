@@ -77,8 +77,26 @@ const deviceSchema = new Schema(
 deviceSchema.index({ 'members.user': 1 });
 
 deviceSchema.methods.roleOf = function roleOf(userId) {
-  const member = this.members.find((m) => m.user.equals(userId));
+  // m.user is an ObjectId, or a User document after populate().
+  const member = this.members.find((m) => (m.user._id ?? m.user).equals(userId));
   return member ? member.role : null;
+};
+
+// What a paired phone sees: no Wi-Fi, no secrets, and its own role.
+deviceSchema.methods.forUser = function forUser(userId) {
+  return {
+    id: this._id,
+    name: this.name,
+    kind: this.kind,
+    display: this.display,
+    online: this.online,
+    lastSeenAt: this.lastSeenAt,
+    fw: this.fw,
+    net: this.net,
+    mode: this.mode,
+    role: this.roleOf(userId),
+    memberCount: this.members.length,
+  };
 };
 
 // API responses: `id` instead of `_id`, and never any secret, even if a

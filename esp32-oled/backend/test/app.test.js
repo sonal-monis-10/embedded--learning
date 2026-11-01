@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import request from 'supertest';
 import { createApp, closeDatabase } from '../app.js';
 import { loadConfig } from '../utils/config.js';
-import { startTestDb } from './support/db.js';
+import { startTestDb, testEnv } from './support/db.js';
 
 let app;
 let mongod;
@@ -50,22 +50,41 @@ describe('errors', () => {
 });
 
 describe('loadConfig', () => {
-  const uri = 'mongodb+srv://u:p@cluster.example.net';
+  const env = (overrides) => testEnv({ NODE_ENV: undefined, ...overrides });
 
   it('applies defaults', () => {
-    const c = loadConfig({ MONGODB_URI: uri });
+    const c = loadConfig(env());
     assert.equal(c.port, 8080);
     assert.equal(c.env, 'development');
     assert.equal(c.mongo.dbName, 'oled');
+    assert.equal(c.cleanupTz, 'Asia/Kolkata');
+    assert.equal(c.secretsKey.length, 32);
   });
 
-  it('requires MONGODB_URI', () => {
-    assert.throws(() => loadConfig({}), /MONGODB_URI: is required/);
-  });
-
-  it('lists every invalid variable without echoing the connection string', () => {
+  it('requires MONGODB_URI, ADMIN_KEY and SECRETS_KEY', () => {
     assert.throws(
-      () => loadConfig({ PORT: 'abc', CORS_ORIGIN: 'not a url', MONGODB_URI: 'http://secret' }),
+      () => loadConfig({}),
+      (err) =>
+        ['MONGODB_URI: is required', 'ADMIN_KEY: is required', 'SECRETS_KEY: is required'].every(
+          (msg) => err.message.includes(msg),
+        ),
+    );
+  });
+
+  it('rejects a short admin key, a wrong-size secrets key and an unknown time zone', () => {
+    assert.throws(
+      () =>
+        loadConfig(
+          env({ ADMIN_KEY: 'short', SECRETS_KEY: 'c2hvcnQ=', CLEANUP_TZ: 'Mars/Olympus' }),
+        ),
+      (err) => ['ADMIN_KEY', 'SECRETS_KEY', 'CLEANUP_TZ'].every((n) => err.message.includes(n)),
+    );
+  });
+
+  it('lists every invalid variable without echoing values', () => {
+    assert.throws(
+      () =>
+        loadConfig(env({ PORT: 'abc', CORS_ORIGIN: 'not a url', MONGODB_URI: 'http://secret' })),
       (err) =>
         ['PORT', 'CORS_ORIGIN', 'MONGODB_URI'].every((name) => err.message.includes(name)) &&
         !err.message.includes('http://secret'),
