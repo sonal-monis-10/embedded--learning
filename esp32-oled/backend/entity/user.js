@@ -2,9 +2,10 @@ import mongoose from 'mongoose';
 
 const { Schema } = mongoose;
 
-// A user is a phone (or browser) that paired by scanning a device's QR code.
-// There is no email or password: the user is identified by the session
-// tokens issued at pairing time.
+// A user is a phone (or browser) that paired by scanning a device's QR code
+// and typed a name. There is no email or password: the user is identified
+// by the session token issued at pairing time. All users are deleted by the
+// nightly cleanup (00:00 IST); people pair again the next day.
 const userSchema = new Schema(
   {
     // Shown in session/member lists, e.g. "Sonal's iPhone". Editable later.

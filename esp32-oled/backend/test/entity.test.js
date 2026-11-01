@@ -1,7 +1,7 @@
 import { after, before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import mongoose from 'mongoose';
-import { Device } from '../entity/device.js';
+import { Device, NIGHTLY_RESET } from '../entity/device.js';
 import { User } from '../entity/user.js';
 import { startTestDb } from './support/db.js';
 
@@ -23,7 +23,6 @@ const encrypted = { iv: 'aXY=', tag: 'dGFn', data: 'ZGF0YQ==' };
 function newDevice(overrides = {}) {
   return {
     _id: 'oled-7k2m9q',
-    name: 'Desk OLED',
     kind: 'hardware',
     display: 'sh1106',
     secret: encrypted,
@@ -42,9 +41,10 @@ describe('User', () => {
 });
 
 describe('Device', () => {
-  it('is unclaimed and idle by default', async () => {
+  it('has no members, no name and is idle by default', async () => {
     const device = await Device.create(newDevice({ _id: 'oled-aaaaa1' }));
-    assert.equal(device.owner, null);
+    assert.equal(device.members.length, 0);
+    assert.equal(device.name, null);
     assert.equal(device.mode, 'idle');
     assert.equal(device.online, false);
   });
@@ -84,10 +84,49 @@ describe('Device', () => {
     assert.equal(json.wifi.ssid, 'HomeWiFi');
   });
 
-  it('links to the user who paired it', async () => {
-    const user = await User.create({ name: 'Test phone' });
-    const device = await Device.create(newDevice({ _id: 'oled-aaaaa5', owner: user._id }));
-    const loaded = await Device.findById(device._id).populate('owner');
-    assert.equal(loaded.owner.name, 'Test phone');
+  it('tracks owner and member roles', async () => {
+    const owner = await User.create({ name: 'Owner phone' });
+    const member = await User.create({ name: 'Member phone' });
+    const stranger = await User.create({ name: 'Stranger' });
+    const device = await Device.create(
+      newDevice({
+        _id: 'oled-aaaaa5',
+        members: [
+          { user: owner._id, role: 'owner' },
+          { user: member._id, role: 'member' },
+        ],
+      }),
+    );
+
+    assert.equal(device.roleOf(owner._id), 'owner');
+    assert.equal(device.roleOf(member._id), 'member');
+    assert.equal(device.roleOf(stranger._id), null);
+
+    const loaded = await Device.findOne({ 'members.user': member._id }).populate('members.user');
+    assert.equal(loaded.id, 'oled-aaaaa5');
+    assert.equal(loaded.members[0].user.name, 'Owner phone');
+  });
+
+  it('nightly reset clears people data but keeps the login', async () => {
+    const user = await User.create({});
+    await Device.create(
+      newDevice({
+        _id: 'oled-aaaaa6',
+        name: 'Desk',
+        mode: 'eyes',
+        online: true,
+        members: [{ user: user._id, role: 'owner' }],
+      }),
+    );
+
+    await Device.updateMany({}, { $set: NIGHTLY_RESET });
+
+    const device = await Device.findById('oled-aaaaa6').select('+secret +wifi.password');
+    assert.equal(device.name, null);
+    assert.equal(device.members.length, 0);
+    assert.equal(device.mode, 'idle');
+    assert.equal(device.online, true);
+    assert.equal(device.secret.data, encrypted.data);
+    assert.equal(device.wifi.password.data, encrypted.data);
   });
 });

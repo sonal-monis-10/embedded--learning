@@ -107,7 +107,7 @@ PUT /devices/:id/music (lyrics on)
   tokens → a few cents to ~$0.15 per new song at Opus 5.5 prices
   ($4 / $20 per million tokens). Real usage is measured and saved per
   timeline (`usage`).
-- Limit: 20 new generations per user per day (env-configurable). Cached songs are free.
+- Limit: 20 new generations per device per day (users are reset nightly, devices are not) (env-configurable). Cached songs are free.
 - The system prompt is identical for every call, so prompt caching cuts
   its cost after the first call.
 - Needs `ANTHROPIC_API_KEY` (Render env var) on an account with billing.

@@ -4,12 +4,12 @@ Status: **draft v2, waiting for confirmation**. Nothing here is built yet.
 
 | Phase | Goal | File |
 |-------|------|------|
-| 1 | **Foundation**: repo split (`firmware/` `backend/` `frontend/`), accounts, device registry in MongoDB, per-device secrets, Docker firmware build (hardware + Wokwi), secure MQTT connection, device dashboard | [phase-1-foundation.md](phase-1-foundation.md) |
+| 1 | **Foundation**: repo split (`firmware/` `backend/` `frontend/`), QR pairing (no accounts), admin-key device registry in MongoDB, per-device secrets, Docker firmware build (hardware + Wokwi), secure MQTT connection, device dashboard | [phase-1-foundation.md](phase-1-foundation.md) |
 | 2 | **Robot Eyes**: phone gyroscope/accelerometer drives animated eyes in real time | [phase-2-robot-eyes.md](phase-2-robot-eyes.md) |
 | 3 | **Music mode**: pick a song; spinning disc + progress bar, or synced lyrics | [phase-3-music.md](phase-3-music.md) |
 | 4 | **AI lyric animations**: Claude designs a reels-style animation per song | [phase-4-ai-animations.md](phase-4-ai-animations.md) |
 
-The earlier draft had 3 phases. Building accounts, device secrets and the
+The earlier draft had 3 phases. Building pairing, device secrets and the
 Docker build is a large piece of work on its own, so it is now a separate
 phase 1. Each phase ends in something usable and testable.
 
@@ -101,7 +101,8 @@ can take its place.
 | Database | **MongoDB Atlas free tier (M0, 512 MB)**, `mongoose`, one schema file per entity in `backend/entity/`, `zod` for request validation | Your existing DB; schemas document each collection in one place |
 | Device credentials | A random secret per device, created by the backend when you add the device, stored encrypted, delivered to the firmware build in an env file | Every device is known to the server before it exists, so nothing goes missing. See §4 |
 | Wi-Fi credentials | Entered in the **Add device** form (editable later), stored encrypted, included in the device's env file | One form gives you everything the build needs |
-| Phone sign-in | User account (email + password). A phone links to the account by scanning a **one-time pairing QR** (or typing its code) shown on the dashboard | "Copy to phone" without ever copying a device secret. See §4.4 |
+| Phone sign-in | **No email or password.** A phone scans a one-time **pairing QR** on a web page, enters a name, and gets a session for that device. Users and sessions are deleted every night at 00:00 IST; people simply scan again | Nothing to sign up for or remember; no personal data kept. See §4.4 |
+| Who can add devices | Whoever has the **`ADMIN_KEY`** (Render env var), typed once on the Add device page | The site is public; without it anyone could create devices on your broker |
 | Firmware build | **Docker** image runs PlatformIO and outputs ready-to-flash binaries for hardware (SH1106) and **Wokwi** (SSD1306) | Repeatable builds, no local toolchain needed, secret passed as a build secret |
 | Lyrics source | [LRCLIB](https://lrclib.net) (free, timed lyrics) | Spotify has no lyrics API and needs Premium for new apps (Feb 2026) |
 | AI | Claude API (`claude-opus-5-5`), phase 4 only | Generates animation timelines |
@@ -115,7 +116,7 @@ can take its place.
  │ Render Static Site           │     │ Render Web Service (free, Docker): backend/    │     │ ESP32 + OLED           │
  │ frontend/ (Vite React)       │     │                                                │     │ firmware/ (Docker-built)│
  │                              │     │  Node (Express 5) on $PORT                     │     │                        │
- │ Login / QR pairing           │─────┼─► /api/*   REST (JSON, Bearer JWT)             │     │ Wi-Fi                  │
+ │ QR pairing (name only)       │─────┼─► /api/*   REST (JSON, session token)          │     │ Wi-Fi                  │
  │ Device dashboard             │HTTPS│   /healthz                                     │     │ esp-mqtt over wss      │
  │ Add device (+ Wi-Fi)         │     │                                                │     │  user = deviceId       │
  │ Device control:              │─────┼─► /mqtt  byte pipe ──► Mosquitto 127.0.0.1:9001◄┼─wss─┤  pass = deviceSecret  │
@@ -174,7 +175,7 @@ esp32-oled/
 │   ├── app.js                 MongoDB connection, middleware (helmet, CORS, auth), every
 │   │                          router mounted at its path, error handlers
 │   ├── routes/                one file per area, each exports an Express Router with its
-│   │                          business logic: health.js, pairing.js, devices.js, music.js, songs.js
+│   │                          business logic: health.js, admin.js, pairing.js, devices.js, music.js, songs.js
 │   ├── entity/                Mongoose schemas: device.js, user.js (+ session, song, playback,
 │   │                          timeline as phases need them)
 │   ├── middleware/            errors.js, auth.js (session token → req.user), rateLimit.js
@@ -212,15 +213,18 @@ esp32-oled/
 
 | Secret | Created by | Lives in | Stored on server as |
 |--------|-----------|----------|---------------------|
-| User password | User | User's head | `scrypt` hash (Node built-in crypto) |
-| Access token | Backend at login | Browser memory/localStorage, 15 min life | Not stored (signed JWT) |
-| Refresh token | Backend at login | Browser localStorage, 30 days, rotated on use | SHA-256 hash, revocable |
-| Pairing code | Backend, on request | Shown on the dashboard as QR + 6-digit code, 5 min, single use | SHA-256 hash, TTL index |
+| `ADMIN_KEY` | You / Render | Render env var; your browser's localStorage on the Add device page | Not stored (compared with `timingSafeEqual`) |
+| Session token | Backend, when a phone pairs | Phone's localStorage; expires at the next 00:00 IST | SHA-256 hash, TTL index, deleted nightly |
+| Pairing code | Backend, on request | Inside the pairing QR (URL), 2 min, single use | SHA-256 hash, TTL index |
 | **Device secret** | Backend when you add a device | `devices/<id>.env` → baked into that device's firmware; Mosquitto's in-memory user list | **Encrypted** (AES-256-GCM) |
 | Wi-Fi password | You, in the Add device form | `devices/<id>.env` → firmware | **Encrypted** (AES-256-GCM) |
 | Browser MQTT password | Backend, per web session | Browser memory; Mosquitto's user list | Not stored; re-issued on request |
 | `SECRETS_KEY` (32 bytes) | You / Render | Render env var only, **never in MongoDB** | — |
-| `JWT_SECRET`, `MONGODB_URI`, `MQTT_ADMIN_PASSWORD`, `ANTHROPIC_API_KEY` | You / Render | Render env vars only | — |
+| `MONGODB_URI`, `MQTT_ADMIN_PASSWORD`, `MQTT_BACKEND_PASSWORD`, `ANTHROPIC_API_KEY` | You / Render | Render env vars only | — |
+
+Session tokens are random 32-byte values looked up in MongoDB on each
+request, not JWTs. With a few phones and a nightly reset this costs
+nothing, and revoking a session takes effect immediately.
 
 Why the device secret is encrypted rather than hashed: after every
 restart the backend has to give Mosquitto each device's password again,
@@ -231,10 +235,10 @@ also lets you re-download a device's complete `.env` at any time.
 ### 4.2 Device lifecycle
 
 ```
- 1. REGISTER      Dashboard → "Add device" form:
-                    name, kind (hardware | simulator), display (sh1106 | ssd1306),
+ 1. REGISTER      "Add device" page (needs ADMIN_KEY):
+                    kind (hardware | simulator), display (sh1106 | ssd1306),
                     Wi-Fi SSID + password  (simulator: filled with Wokwi-GUEST, no password)
-                  POST /api/devices → backend creates  deviceId = oled-7k2m9q + secret,
+                  POST /api/admin/devices → backend creates  deviceId = oled-7k2m9q + secret,
                     stores both secrets encrypted, adds the MQTT user to Mosquitto
                   → "Download .env"  → devices/oled-7k2m9q.env
                      DEVICE_ID=oled-7k2m9q
@@ -242,23 +246,29 @@ also lets you re-download a device's complete `.env` at any time.
                      BROKER_URL=wss://<backend>.onrender.com/mqtt
                      WIFI_SSID=HomeWiFi
                      WIFI_PASS=…
-                  (download again any time from the device page; Wi-Fi editable there → rebuild)
+                  (download again any time from the admin device list; Wi-Fi editable → rebuild)
  2. BUILD         make firmware DEVICE=oled-7k2m9q        (Docker, see phase 1 §B)
                   → out/oled-7k2m9q/firmware-merged.bin, firmware.elf, manifest.json
  3. FLASH / RUN   hardware: make flash DEVICE=oled-7k2m9q PORT=/dev/ttyUSB0
                   Wokwi:    make sim DEVICE=oled-7k2m9q
  4. FIRST CONNECT device → MQTT (user=oled-7k2m9q, pass=secret) → status "online"
-                  dashboard: "never seen" → "online, fw 0.1.0, RSSI -58"
- 5. CONTROL       phone (paired to the account) sees the device and controls it
- 6. ROTATE        POST /api/devices/:id/rotate-secret → Mosquitto deleteClient (drops the live
-                  connection) + createClient with the new secret → new .env → rebuild
- 7. REMOVE        DELETE /api/devices/:id → deleteClient: connection dropped, login gone
+                  admin list: "never seen" → "online, fw 0.1.0, RSSI -58"
+ 5. PAIR          admin page shows a pairing QR for the device → phone scans →
+                  "Your name?" → phone is the device's owner (see §4.4)
+ 6. CONTROL       paired phones see the device and control it
+ 7. MIDNIGHT      00:00 IST: users, sessions, names, members, mode, events wiped.
+                  The device login stays: the board keeps connecting, nobody controls it
+                  until someone pairs again (back to step 5)
+ 8. ROTATE        POST /api/admin/devices/:id/rotate-secret → Mosquitto deleteClient (drops the
+                  live connection) + createClient with the new secret → new .env → rebuild
+ 9. REMOVE        DELETE /api/admin/devices/:id → deleteClient: connection dropped, login gone
 ```
 
-"Not missing any devices": the backend has the full list from step 1.
-Each device shows one of **never seen / online / offline since …**. A
-connection with an unknown ID or wrong secret is rejected and recorded as a
-`device_events` entry, visible on the dashboard.
+"Not missing any devices": the backend has the full list from step 1,
+and it survives the nightly cleanup. Each device shows one of **never
+seen / online / offline since …**. A connection with an unknown ID or
+wrong secret is rejected and recorded as a `device_events` entry, visible
+in the admin list (until midnight).
 
 ### 4.3 MQTT authentication and permissions
 
@@ -267,13 +277,13 @@ All of these are Mosquitto Dynamic Security clients:
 | Client | MQTT username | MQTT password | Role(s) |
 |--------|---------------|---------------|---------|
 | Device | its `deviceId` | its device secret | `device` |
-| Browser session | `s-<sessionId>` | random, issued by `/api/auth/mqtt-token`, replaced on each call | `user-<userId>` |
+| Browser session | `s-<sessionId>` | random, issued by `/api/mqtt-credentials`, replaced on each call | `user-<userId>` |
 | Backend admin | `admin` | `MQTT_ADMIN_PASSWORD` | dynsec admin (only reachable on 127.0.0.1:1883) |
 | Backend publisher | `backend` | env | `backend` (publish `d/+/mode`, `cmd`, `music/#`; subscribe `d/+/status`) |
 
 `allow_anonymous false`. Topic permissions (`d/<deviceId>/…`):
 
-| Topic | Role `device` (own ID via `%u`) | Role `user-<userId>` (one ACL set per owned device) | Role `backend` |
+| Topic | Role `device` (own ID via `%u`) | Role `user-<userId>` (one ACL set per device they are a member of) | Role `backend` |
 |-------|----------------------|-------------------------|---------|
 | `status` | publish (+ LWT) | subscribe | subscribe |
 | `mode`, `cmd`, `music/*` | subscribe | subscribe (read-only mirror) | publish |
@@ -284,22 +294,48 @@ Mosquitto checks these permissions itself, in memory, so there is no
 database query per message. The backend updates a user's role whenever
 they add or remove a device.
 
-### 4.4 Linking a phone ("copy to the phone")
+### 4.4 Pairing a phone (QR, no login)
 
-The phone gets **its own login**, never the device's secret. If the phone
-held the device secret, anyone with the phone could pretend to *be* the
-device. With a pairing code, the phone can only *control* it.
+The phone gets **its own session**, never the device's secret. If the
+phone held the device secret, anyone with the phone could pretend to *be*
+the device. With a session, the phone can only *control* it.
 
-1. On the laptop dashboard: **"Link a phone"** → `POST /api/auth/pair-codes` → 6-digit code + QR (5 min, single use).
-2. Phone opens the frontend → **"Pair"** → scan the QR or type the code → `POST /api/auth/pair` → the phone gets its own tokens.
-3. The phone now sees every device on the account. Each session can be
-   revoked under Settings → Sessions.
+**Who can show a pairing QR** (a code is single-use and lives 2 min):
+
+| Situation | Who shows the QR | Scanner becomes |
+|-----------|------------------|-----------------|
+| Device has no members (new, or after midnight) | Admin page, device row → **Pair** | **owner** |
+| Device already has an owner | The owner's phone → **Add phone** (QR on the phone's own screen) | **member** |
+| Owner's phone lost | Admin page → **Pair** again (replaces the owner) | **owner** |
+
+**Flow:**
+1. `POST /api/admin/devices/:id/pairing-codes` (admin) or
+   `POST /api/devices/:id/pairing-codes` (owner) → `{url, expiresAt}`.
+   The URL is `https://<frontend>/pair/<code>`. The page renders it as a QR.
+2. The phone's camera opens that URL. The page asks **"Your name?"** (1–40 characters).
+3. `POST /api/pair {code, name}` → backend checks the code (unused, not
+   expired) → creates the user, adds them to the device's `members`,
+   creates a session (expires 00:00 IST) → `{sessionToken, user, device}`.
+4. The phone stores the token and goes to the device's control page.
+   If the phone already has a session (it paired another device today),
+   the same user is reused and the new device is added to it.
+
+**Nightly cleanup (00:00 Asia/Kolkata):**
+- Deletes `users`, `sessions`, `pairing_codes`, `device_events`,
+  `playback`; resets every device's `members`, `name` and `mode`.
+- Removes every browser MQTT login (`s-*` clients) and user role from
+  Mosquitto. Phones show "Session ended at midnight, scan again".
+- Device logins and Wi-Fi are **not** touched.
+- The free Render instance may be asleep at midnight, so the job can't
+  rely on a timer alone. The date of the last cleanup is stored; on
+  startup and every 15 min the backend runs it if today's (IST) cleanup
+  hasn't happened. Sessions also carry `expiresAt` = next midnight, so
+  an old token is rejected even before the cleanup runs.
 
 ### 4.5 Other protections
 
-- Sign-up is closed by default. The first admin is created with
-  `scripts/seed-admin.js`; more users need `SIGNUP_CODE` (env).
-- Rate limits: login (5/min/IP), pairing (5/min/IP), search, AI generation.
+- Admin routes (`/api/admin/*`) require the `X-Admin-Key` header.
+- Rate limits: pairing (10/min/IP), admin key failures (5/min/IP), search, AI generation.
 - `helmet` headers, CORS only for the frontend origin, request body size
   limit. Mosquitto `max_packet_size` 16 KB; both Mosquitto listeners bound
   to `127.0.0.1`, so the only way in from outside is the `/mqtt` pipe.
@@ -316,21 +352,28 @@ device. With a pairing code, the phone can only *control* it.
 
 | Collection | Fields (main) | Indexes | Phase |
 |------------|---------------|---------|-------|
-| `users` | `_id, email, passwordHash, role (admin/user), createdAt` | `email` unique | 1 |
-| `sessions` | `_id, userId, refreshHash, device (UA), createdAt, lastUsedAt, expiresAt` | `refreshHash` unique, TTL `expiresAt` | 1 |
-| `pair_codes` | `codeHash, userId, expiresAt` | TTL `expiresAt` | 1 |
-| `devices` | `_id (deviceId), ownerId, name, kind (hardware/simulator), display (sh1106/ssd1306), secretEnc, secretVersion, wifi {ssid, passEnc}, createdAt, lastSeenAt, online, fw {version, gitSha, builtAt}, net {rssi, ip}, mode` | `ownerId` | 1 |
-| `device_events` | `deviceId, type (connect/disconnect/auth_fail/rotate/created/wifi_changed), at, meta` | `deviceId+at`, TTL 30 days | 1 |
+Mongoose schemas live in `backend/entity/`. **Kept** = survives the
+nightly cleanup.
 
-`*Enc` fields hold `{iv, tag, data}` from AES-256-GCM with `SECRETS_KEY`.
-Mosquitto keeps no state of its own that matters: logins come from
-`devices` and `sessions`, and retained messages are re-published from
-`devices.mode` / `playback`.
-| `songs` | `_id (lrclibId), title, artist, album, durationMs, lines [[ms,text]], plainLyrics, fetchedAt` | text index on `title, artist` | 3 |
-| `playback` | `_id (deviceId), songId, lyrics (bool), positionMs, playing, updatedAt` | — | 3 |
-| `timelines` | `songId, promptVersion, model, fx, usage {in,out}, createdAt, status` | `songId+promptVersion` unique | 4 |
+| Collection (entity) | Fields (main) | Indexes | Kept? | Phase |
+|---------------------|---------------|---------|-------|-------|
+| `devices` (`device.js`) | `_id (deviceId), kind, display, secret (enc), secretVersion, wifi {ssid, password (enc)}, createdAt` | — | **yes** | 1 |
+| ↳ same documents | `name, members [{user, role owner/member, joinedAt}], mode` | `members.user` | reset nightly | 1 |
+| ↳ same documents | `online, lastSeenAt, fw {version, gitSha, builtAt}, net {rssi, ip}` (live status, refreshed by the device) | — | yes | 1 |
+| `users` (`user.js`) | `_id, name, createdAt, lastSeenAt` (no email, no password) | — | no | 1 |
+| `sessions` (`session.js`) | `_id, user, tokenHash, userAgent, createdAt, lastUsedAt, expiresAt` | `tokenHash` unique, TTL `expiresAt` | no | 1 |
+| `pairing_codes` (`pairingCode.js`) | `codeHash, device, role (owner/member), createdBy (admin / userId), expiresAt, usedAt` | `codeHash` unique, TTL `expiresAt` | no | 1 |
+| `device_events` (`deviceEvent.js`) | `device, type (connect/disconnect/auth_fail/rotate/created/wifi_changed/paired), at, meta` | `device+at` | no | 1 |
+| `meta` | `_id: "cleanup", lastRunDate (IST, YYYY-MM-DD)` | — | yes | 1 |
+| `songs` (`song.js`) | `_id (lrclibId), title, artist, album, durationMs, lines [[ms,text]], plainLyrics, fetchedAt` | text index on `title, artist` | yes (cache) | 3 |
+| `playback` (`playback.js`) | `_id (deviceId), song, lyrics (bool), positionMs, playing, updatedAt` | — | no | 3 |
+| `timelines` (`timeline.js`) | `song, promptVersion, model, fx, usage {in,out}, createdAt, status` | `song+promptVersion` unique | yes (cache) | 4 |
 
-TTL indexes and short-lived events keep the database well under the 512 MB
+`(enc)` fields hold `{iv, tag, data}` from AES-256-GCM with `SECRETS_KEY`,
+are `select: false`, and never appear in API responses. Mosquitto keeps no
+state of its own that matters: logins come from `devices` and `sessions`,
+and retained messages are re-published from `devices.mode` / `playback`.
+The nightly cleanup and caches keep the database well under the 512 MB
 free-tier limit.
 
 ---
@@ -354,30 +397,37 @@ Prefix `d/<deviceId>/`. Payloads are compact JSON.
 
 ## 7. REST API (all phases)
 
-Base: `https://<backend>.onrender.com/api`. JSON. `🔒` = needs
-`Authorization: Bearer <access token>`. Device routes check that the
-caller owns the device (otherwise `404`, so other users can't even
-confirm a device ID exists).
+Base: `https://<backend>.onrender.com/api`. JSON.
+- `🔒` = needs `Authorization: Bearer <session token>` (a paired phone).
+  Device routes check that the caller is a member of the device
+  (otherwise `404`, so others can't even confirm a device ID exists).
+  `👑` = the caller must be the device's owner.
+- `🛠` = needs `X-Admin-Key: <ADMIN_KEY>`.
 
 | Method & path | Purpose | Phase |
 |---------------|---------|-------|
 | `GET /healthz` | Liveness + DB check (no `/api` prefix) | 1 |
-| `POST /api/auth/signup` | `{email, password, signupCode}` | 1 |
-| `POST /api/auth/login` | `{email, password}` → `{accessToken, refreshToken, user}` | 1 |
-| `POST /api/auth/refresh` | `{refreshToken}` → new pair (old one revoked) | 1 |
-| `POST /api/auth/logout` 🔒 | revoke current session | 1 |
-| `GET /api/auth/me` 🔒 | current user | 1 |
-| `GET /api/auth/sessions` 🔒 / `DELETE /api/auth/sessions/:id` 🔒 | list / revoke sessions (e.g. a lost phone) | 1 |
-| `POST /api/auth/pair-codes` 🔒 | create a pairing code + QR payload | 1 |
-| `POST /api/auth/pair` | `{code}` → tokens for the new phone | 1 |
-| `GET /api/auth/mqtt-token` 🔒 | `{url, username, password}` for MQTT.js (creates or refreshes this session's MQTT login) | 1 |
-| `GET /api/devices` 🔒 | list with online / last seen / fw | 1 |
-| `POST /api/devices` 🔒 | `{name, kind, display, wifi: {ssid, password}}` → `{device, envFile}` | 1 |
-| `GET /api/devices/:id` 🔒 | details + recent events (Wi-Fi SSID shown, password never returned) | 1 |
-| `PATCH /api/devices/:id` 🔒 | rename, change Wi-Fi `{wifi: {ssid, password}}` (needs a rebuild) | 1 |
-| `DELETE /api/devices/:id` 🔒 | remove + disconnect | 1 |
-| `POST /api/devices/:id/rotate-secret` 🔒 | new secret, old one disconnected → new env file | 1 |
-| `GET /api/devices/:id/env` 🔒 | download the complete `.env` (re-authenticate: requires the account password again) | 1 |
+| **Admin** | | |
+| `GET /api/admin/devices` 🛠 | all devices with online / last seen / fw / members | 1 |
+| `POST /api/admin/devices` 🛠 | `{kind, display, wifi: {ssid, password}}` → `{device, envFile}` | 1 |
+| `PATCH /api/admin/devices/:id` 🛠 | change Wi-Fi `{wifi: {ssid, password}}` (needs a rebuild) | 1 |
+| `DELETE /api/admin/devices/:id` 🛠 | remove + disconnect | 1 |
+| `POST /api/admin/devices/:id/rotate-secret` 🛠 | new secret, old one disconnected → new env file | 1 |
+| `GET /api/admin/devices/:id/env` 🛠 | download the complete `.env` | 1 |
+| `POST /api/admin/devices/:id/pairing-codes` 🛠 | pairing QR that makes the scanner the **owner** (replaces any owner) | 1 |
+| `POST /api/admin/cleanup` 🛠 | run the nightly cleanup now (testing) | 1 |
+| **Pairing and session** | | |
+| `POST /api/pair` | `{code, name}` → `{sessionToken, user, device}` (reuses the caller's user if a valid token is sent) | 1 |
+| `GET /api/me` 🔒 | current user + their devices | 1 |
+| `PATCH /api/me` 🔒 | change name | 1 |
+| `POST /api/logout` 🔒 | end this session | 1 |
+| `GET /api/mqtt-credentials` 🔒 | `{url, username, password}` for MQTT.js (creates or refreshes this session's MQTT login) | 1 |
+| **Devices (paired phones)** | | |
+| `GET /api/devices` 🔒 | the caller's devices with live status | 1 |
+| `GET /api/devices/:id` 🔒 | details + members | 1 |
+| `PATCH /api/devices/:id` 🔒👑 | rename (e.g. "Sonal's desk") | 1 |
+| `POST /api/devices/:id/pairing-codes` 🔒👑 | pairing QR that makes the scanner a **member** | 1 |
+| `DELETE /api/devices/:id/members/:userId` 🔒👑 | remove a member (or yourself) | 1 |
 | `PUT /api/devices/:id/mode` 🔒 | `{mode}` → saved + published | 1 |
 | `POST /api/devices/:id/commands` 🔒 | `{op, …}` → `cmd` topic (identify, reboot, brightness) | 1 |
 | `POST /api/devices/:id/messages` 🔒 | **testing helper**: `{topic: "mode"/"cmd"/"imu", payload}` → publishes after validation. Lets you drive a device with `curl` | 1 |
@@ -399,12 +449,13 @@ HTTP status codes.
 | Variable | Where | Example |
 |----------|-------|---------|
 | `MONGODB_URI` | backend (Render env) | `mongodb+srv://…/oled` |
-| `JWT_SECRET` | backend | generated by Render (`generateValue: true`) |
+| `MONGODB_DB` | backend | `oled` (default) |
+| `ADMIN_KEY` | backend | long random string you choose; typed once on the Add device page |
+| `CLEANUP_TZ` | backend | `Asia/Kolkata` (default); the nightly cleanup runs at 00:00 in this zone |
 | `SECRETS_KEY` | backend | 32 random bytes, base64 (set once and back it up: losing it means re-registering every device) |
 | `MQTT_ADMIN_PASSWORD`, `MQTT_BACKEND_PASSWORD` | backend | generated by Render |
 | `CORS_ORIGIN` | backend | `https://oled-frontend.onrender.com` |
 | `PUBLIC_MQTT_URL` | backend | `wss://oled-backend.onrender.com/mqtt` (written into device env files) |
-| `SIGNUP_CODE` | backend | optional |
 | `LRCLIB_USER_AGENT` | backend | `esp32-oled/0.1 (+github url)` (LRCLIB asks clients to identify themselves) |
 | `ANTHROPIC_API_KEY` | backend | phase 4 |
 | `VITE_API_URL`, `VITE_MQTT_URL` | frontend (build time) | backend URLs |
@@ -445,6 +496,11 @@ log for `MQTT connected`.
 | 2026-11-01 | **Mosquitto** with the Dynamic Security plugin, run inside the backend container (Aedes considered and rejected) |
 | 2026-11-01 | Phones link with a one-time **pairing QR** |
 | 2026-11-01 | Wi-Fi entered in the **Add device** form, stored encrypted, built into the firmware |
+| 2026-11-01 | Backend layout: `server.js`, `app.js` (MongoDB + middleware + route paths), `routes/` (logic), `entity/` (Mongoose schemas), no `src/` |
+| 2026-11-01 | **No email/password accounts.** Phones pair by QR and give a name; users, sessions and pairings are wiped nightly at 00:00 IST. Device logins are kept |
+| 2026-11-01 | Pairing QR shown on a **web page** (admin page for the first owner, owner's phone for more members) |
+| 2026-11-01 | Device registration guarded by an **`ADMIN_KEY`** |
+| 2026-11-01 | No `.env*` files committed, not even `.env.example` |
 
 ## 11. Open questions
 

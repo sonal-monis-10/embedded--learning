@@ -4,7 +4,7 @@
 sensors**. Tilting the phone moves a pair of robot eyes on the OLED
 smoothly in real time, and the eyes react to shakes, flips and inactivity.
 
-Needs phase 1 (accounts, devices, secure MQTT). Shared design: [README.md](README.md).
+Needs phase 1 (QR pairing, devices, secure MQTT). Shared design: [README.md](README.md).
 
 ---
 
@@ -60,7 +60,7 @@ being ignored.
 ## C. Backend
 
 Almost nothing new. Already covered by phase 1:
-- ACL: users may publish `d/<id>/imu` only for devices they own; payload ≤ 64 bytes.
+- ACL: users may publish `d/<id>/imu` only for devices they are a member of; payload ≤ 64 bytes.
 - `PUT /mode` accepts `eyes`.
 - `POST /commands` accepts expression ops (`zod` enum).
 - Flood protection: Mosquitto has no per-client message rate limit, so
@@ -123,7 +123,7 @@ animations without the board.
 | Smoothness | ≥ 28 fps sustained in eyes mode; no visible jitter when the phone is held still |
 | iOS + Android | Permission flow works on Safari iOS and Chrome Android |
 | Loss | 30 % random packet drop (test flag) still looks smooth |
-| Security | Publishing `imu` to a device you don't own is rejected; payload > 64 bytes rejected |
+| Security | Publishing `imu` to a device you are not a member of is rejected; payload > 64 bytes rejected |
 | Idle | Closing the page → idle look-around within 2 s, sleep after 60 s |
 | Simulator | Same behaviour in Wokwi (lower fps acceptable) |
 
