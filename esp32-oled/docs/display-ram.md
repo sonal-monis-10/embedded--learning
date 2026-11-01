@@ -98,7 +98,7 @@ bool on = buf[x + (y / 8) * 128] &  (1 << (y & 7));  // READ pixel
 ```
 
 This is exactly what `Adafruit_GrayOLED::drawPixel()` does
-(`.pio/libdeps/oled_sh1106/Adafruit GFX Library/Adafruit_GrayOLED.cpp`).
+(`firmware/.pio/libdeps/oled_sh1106/Adafruit GFX Library/Adafruit_GrayOLED.cpp`).
 
 ### Worked example
 

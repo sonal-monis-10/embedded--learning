@@ -2,7 +2,7 @@
 
 | File | What it covers |
 |------|----------------|
-| [how-main-works.md](how-main-works.md) | Walk-through of `src/main.cpp`: build flags, `setup()`, `loop()`, drawing calls, where to make changes |
+| [how-main-works.md](how-main-works.md) | Walk-through of `firmware/src/main.cpp`: build flags, `setup()`, `loop()`, drawing calls, where to make changes |
 | [plan/](plan/README.md) | **Draft plan**: architecture, security, API, and 4 phases (foundation, robot eyes, music, AI animations) |
 | [display-ram.md](display-ram.md) | The framebuffer and the OLED's GDDRAM: page layout, the pixel formula, the I2C bytes, raw buffer access, raw commands |
 
@@ -48,7 +48,7 @@ Read roughly in this order. ★ = read first.
 | Arduino-ESP32 `Serial` | `begin`, `printf` | [Arduino-ESP32 Serial API](https://docs.espressif.com/projects/arduino-esp32/en/latest/api/serial.html) |
 
 The exact library source used by your build is on disk, under
-`.pio/libdeps/oled_sh1106/`. That is the code your firmware actually runs.
+`firmware/.pio/libdeps/oled_sh1106/`. That is the code your firmware actually runs.
 
 ### 4. Tools
 
@@ -56,17 +56,17 @@ The exact library source used by your build is on disk, under
 |------|-----|------|
 | image2cpp | Convert a PNG/JPG into a C byte array. Choose "Horizontal" for `drawBitmap()` or "Vertical" for a raw framebuffer copy (see [display-ram.md §5](display-ram.md#5-accessing-the-framebuffer-directly)) | [javl.github.io/image2cpp](https://javl.github.io/image2cpp/) |
 | PlatformIO `platformio.ini` | Environments, `build_flags`, `lib_deps` | [PlatformIO project config](https://docs.platformio.org/en/latest/projectconf/index.html) |
-| I2C scanner | Find the OLED's address: `make scanner` | `tools/i2c_bus_scanner.cpp` |
+| I2C scanner | Find the OLED's address: `make scanner` | `firmware/tools/i2c_bus_scanner.cpp` |
 
 ---
 
 ## Suggested path
 
-1. Read [how-main-works.md](how-main-works.md) with `src/main.cpp` open beside it.
+1. Read [how-main-works.md](how-main-works.md) with `firmware/src/main.cpp` open beside it.
 2. SparkFun I2C + the bitwise operations page.
 3. [display-ram.md](display-ram.md). Then try the `rawDemo()` example in §5.
 4. SH1106 datasheet: the GDDRAM section and the command table. Check each
    byte of `Adafruit_SH1106G::begin()`'s init list against it.
-5. Read `Adafruit_SH110X::display()` in `.pio/libdeps/`. You should now
+5. Read `Adafruit_SH110X::display()` in `firmware/.pio/libdeps/`. You should now
    understand every line.
 6. Stage 2: write your own driver ([display-ram.md §7](display-ram.md#7-stage-2-preview-the-minimum-your-own-driver-needs)).

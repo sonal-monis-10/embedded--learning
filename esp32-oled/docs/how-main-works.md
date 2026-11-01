@@ -1,4 +1,4 @@
-# How `src/main.cpp` works
+# How `firmware/src/main.cpp` works
 
 A walk through the OLED demo, from power-on to pixels on the glass.
 For the memory layout behind it, see [display-ram.md](display-ram.md).
@@ -47,7 +47,7 @@ second. The panel always shows whatever is in GDDRAM, so if you forget
 #endif
 ```
 
-`USE_SH1106` is not defined in the code. It comes from `platformio.ini`:
+`USE_SH1106` is not defined in the code. It comes from `firmware/platformio.ini`:
 
 ```ini
 [env:oled_sh1106]

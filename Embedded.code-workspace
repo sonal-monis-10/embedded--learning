@@ -2,7 +2,10 @@
     // Each PlatformIO project is its own root, so VS Code / IntelliSense reads
     // that project's .vscode/c_cpp_properties.json (its include paths).
     "folders": [
+        // esp32-oled holds firmware/, backend/, frontend/ and docs/. The
+        // firmware is listed again on its own so PlatformIO finds platformio.ini.
         { "path": "esp32-oled" },
+        { "path": "esp32-oled/firmware", "name": "esp32-oled/firmware" },
         { "path": "line-follower" },
         { "path": "ir_array_test" },
         { "path": "Random_Number_Dice" }
