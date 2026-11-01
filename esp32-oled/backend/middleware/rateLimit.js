@@ -5,6 +5,10 @@ import { config } from '../utils/config.js';
 // expire after 2 minutes, so guessing one is hopeless.
 export const pairingLimiter = perMinute({ limit: 10 });
 
+// Device registration: the provision key ships in every firmware, so cap
+// how fast anyone holding it can add devices.
+export const provisionLimiter = perMinute({ limit: 5 });
+
 // Only wrong keys count, so normal admin use is never slowed down.
 export const adminKeyLimiter = perMinute({
   limit: 5,

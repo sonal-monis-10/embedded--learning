@@ -40,6 +40,7 @@ Create `backend/.env`. It is git-ignored, and every variable is checked at start
 
 ```env
 MONGODB_URI=mongodb+srv://<user>:<password>@<cluster>.mongodb.net/
+PROVISION_KEY=<at least 24 random characters>   # also goes into firmware.env
 ADMIN_KEY=<at least 24 random characters>
 SECRETS_KEY=<32 random bytes, base64>   # node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 ```
@@ -77,10 +78,12 @@ make check       # compile every firmware environment
 esp32-oled/
 ├── backend/          Express 5 API, run as `node server.js`
 │   ├── entity/       Mongoose schemas: device, user, session, pairingCode, deviceEvent, meta
-│   ├── middleware/   auth (admin key, sessions, device roles), errors, rate limits, validation
-│   ├── routes/       admin, pairing, devices, health: each lists its routes at the top
+│   ├── live/         /api/live WebSocket: tilt in, status and "turn ended" out
+│   ├── middleware/   auth (provision/admin keys, sessions, controller), errors, rate limits, validation
+│   ├── mqtt/         messages to devices (a stand-in until Mosquitto is added)
+│   ├── routes/       admin (provisioning, maintenance), pairing, devices, health
 │   ├── test/         node:test suites, shared in-memory MongoDB
-│   ├── utils/        config, logger, secrets (AES-GCM), time zones, nightly cleanup
+│   ├── utils/        config, secrets (AES-GCM), turns (release, idle), pairing issuer, cleanup
 │   ├── app.js        MongoDB connection, middleware, route mounting
 │   └── server.js     entry point, graceful shutdown, cleanup schedule
 ├── docs/             guides, architecture diagram, project plan

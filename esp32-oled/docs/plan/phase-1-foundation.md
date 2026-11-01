@@ -21,8 +21,8 @@ especially §4.2 (device lifecycle) and §4.4 (pairing).
 | C0 | Backend: MongoDB, entities, sessions, pairing codes, nightly cleanup (first model, with members and an admin-issued QR) | **Done**, being reworked in step 2 |
 | D0 | Frontend first pass: pair, home, device pages in the warm consumer world | **Done**; finish review said **rebuild** (see §D) |
 | 1 | Plan updated to the self-registering, one-phone-per-device model | **Done** (this document) |
-| 2 | Backend rework: provisioning, single controller, release, `/api/live` | Next |
-| 3 | Mosquitto inside the backend container | |
+| 2 | Backend rework: provisioning, single controller, release, `/api/live` | **Done** (67 tests; MQTT publishing goes to a stand-in until step 3) |
+| 3 | Mosquitto inside the backend container | Next |
 | 4 | Firmware: provisioning, MQTT, pairing screen, eyes | |
 | 5 | Frontend rebuild for the new flow, with the review fixes | |
 | E | Deploy on Render | Last |

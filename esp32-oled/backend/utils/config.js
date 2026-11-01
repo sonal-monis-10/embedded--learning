@@ -14,7 +14,16 @@ const schema = z.object({
     .regex(/^mongodb(\+srv)?:\/\//, 'must start with mongodb:// or mongodb+srv://'),
   MONGODB_DB: z.string().min(1).default('oled'),
 
+  // Built into every firmware: lets a device register itself on first boot.
+  // It can do nothing else, so it is a separate key from ADMIN_KEY.
+  PROVISION_KEY: z.string({ error: 'is required' }).min(24, 'must be at least 24 characters'),
+  MAX_DEVICES: z.coerce.number().int().min(1).default(20),
+
+  // Maintenance routes (curl only; there is no admin page).
   ADMIN_KEY: z.string({ error: 'is required' }).min(24, 'must be at least 24 characters'),
+
+  // A turn ends after this many minutes without tilt or mode changes.
+  IDLE_RELEASE_MIN: z.coerce.number().int().min(1).default(10),
 
   // Encrypts device secrets and Wi-Fi passwords in MongoDB. Losing it means
   // re-registering every device, so keep a backup.
@@ -50,7 +59,10 @@ export function loadConfig(env) {
     logLevel: vars.LOG_LEVEL,
     frontendUrl: vars.CORS_ORIGIN.replace(/\/$/, ''),
     mongo: { uri: vars.MONGODB_URI, dbName: vars.MONGODB_DB },
+    provisionKey: vars.PROVISION_KEY,
+    maxDevices: vars.MAX_DEVICES,
     adminKey: vars.ADMIN_KEY,
+    idleReleaseMs: vars.IDLE_RELEASE_MIN * 60_000,
     secretsKey: Buffer.from(vars.SECRETS_KEY, 'base64'),
     publicMqttUrl: vars.PUBLIC_MQTT_URL,
     cleanupTimeZone: vars.CLEANUP_TZ,

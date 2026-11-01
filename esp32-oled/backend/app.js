@@ -4,9 +4,8 @@ import cors from 'cors';
 import mongoose from 'mongoose';
 import { config } from './utils/config.js';
 import { logger } from './utils/logger.js';
-import { requireAdmin, requireSession } from './middleware/auth.js';
+import { requireSession } from './middleware/auth.js';
 import { errorHandler, unknownRoute } from './middleware/errors.js';
-import { adminKeyLimiter } from './middleware/rateLimit.js';
 import healthRoutes from './routes/health.js';
 import adminRoutes from './routes/admin.js';
 import pairingRoutes from './routes/pairing.js';
@@ -28,7 +27,8 @@ export async function createApp() {
   app.use(express.json({ limit: '16kb' }));
 
   app.use('/healthz', healthRoutes);
-  app.use('/api/admin', adminKeyLimiter, requireAdmin, adminRoutes);
+  // Each admin route names its own key (provision or admin).
+  app.use('/api/admin', adminRoutes);
   app.use('/api/devices', requireSession, deviceRoutes);
   app.use('/api', pairingRoutes);
 

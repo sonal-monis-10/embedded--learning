@@ -1,17 +1,15 @@
 import mongoose from 'mongoose';
-import { config } from '../utils/config.js';
-import { newToken, randomString, seal, unseal } from '../utils/secrets.js';
+import { newToken, randomString, seal } from '../utils/secrets.js';
 
 const { Schema } = mongoose;
 
 export const DEVICE_ID_PATTERN = /^oled-[a-z0-9]{6}$/;
 const ID_ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789';
-const WOKWI_WIFI = { ssid: 'Wokwi-GUEST', password: '' };
 const DUPLICATE_KEY = 11000;
 
 // What the nightly cleanup resets. Everything else on a device survives,
 // so a flashed board keeps connecting after midnight.
-export const NIGHTLY_RESET = { name: null, members: [], mode: 'idle' };
+export const NIGHTLY_RESET = { name: null, controller: null, mode: 'idle' };
 
 const sealedSchema = new Schema(
   {
@@ -22,29 +20,26 @@ const sealedSchema = new Schema(
   { _id: false },
 );
 
-const memberSchema = new Schema(
+// The one phone playing with the device right now.
+const controllerSchema = new Schema(
   {
     user: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-    role: { type: String, enum: ['owner', 'member'], required: true },
-    joinedAt: { type: Date, default: Date.now },
+    since: { type: Date, default: Date.now },
+    // Bumped by tilt and mode changes; the idle timer reads it.
+    lastActiveAt: { type: Date, default: Date.now },
   },
   { _id: false },
 );
 
 const deviceSchema = new Schema(
   {
-    // Also the device's MQTT username.
+    // Also the device's MQTT username, e.g. "oled-7k2m9q".
     _id: { type: String, match: DEVICE_ID_PATTERN },
     kind: { type: String, enum: ['hardware', 'simulator'], required: true },
     display: { type: String, enum: ['sh1106', 'ssd1306'], required: true },
 
-    // Secrets are only loaded when a query asks for them: .select('+secret').
+    // MQTT password, only loaded when a query asks: .select('+secret').
     secret: { type: sealedSchema, required: true, select: false },
-    secretVersion: { type: Number, default: 1 },
-    wifi: {
-      ssid: { type: String, maxlength: 32, default: '' },
-      password: { type: sealedSchema, select: false },
-    },
 
     // Reported by the device itself.
     online: { type: Boolean, default: false },
@@ -54,30 +49,31 @@ const deviceSchema = new Schema(
 
     // People data, reset nightly.
     name: { type: String, trim: true, maxlength: 40, default: null },
-    members: { type: [memberSchema], default: [] },
+    controller: { type: controllerSchema, default: null },
     mode: { type: String, enum: ['idle', 'eyes', 'music'], default: 'idle' },
   },
   { timestamps: true, versionKey: false },
 );
 
-deviceSchema.index({ 'members.user': 1 });
-
-// ---- Registration and secrets ----
+// A phone controls at most one device: enforced by the database itself.
+deviceSchema.index(
+  { 'controller.user': 1 },
+  { unique: true, partialFilterExpression: { 'controller.user': { $exists: true } } },
+);
 
 // Creates a device with a random ID and secret. Returns the secret in plain
-// text once, for its .env file; only the sealed copy is stored.
-deviceSchema.statics.register = async function ({ kind, display, wifi }) {
+// text once, for the firmware to keep in flash; only the sealed copy is stored.
+deviceSchema.statics.register = async function ({ kind, display, fw }) {
   const secret = newToken();
-  const fields = {
-    kind,
-    display,
-    secret: seal(secret),
-    wifi: sealWifi(kind === 'simulator' ? WOKWI_WIFI : wifi),
-  };
-
   for (let attempt = 1; attempt <= 5; attempt++) {
     try {
-      const device = await this.create({ _id: newDeviceId(), ...fields });
+      const device = await this.create({
+        _id: `oled-${randomString(ID_ALPHABET, 6)}`,
+        kind,
+        display,
+        fw,
+        secret: seal(secret),
+      });
       return { device, secret };
     } catch (err) {
       if (err.code !== DUPLICATE_KEY) throw err;
@@ -86,70 +82,34 @@ deviceSchema.statics.register = async function ({ kind, display, wifi }) {
   throw new Error('Could not generate a unique device ID');
 };
 
-deviceSchema.statics.findWithSecrets = function (id) {
-  return this.findById(id).select('+secret +wifi.password');
+// Makes `userId` the controller if the device is still free. Atomic, so two
+// phones racing for one device can't both win. Returns the device or null.
+deviceSchema.statics.claim = function (deviceId, userId, now = new Date()) {
+  return this.findOneAndUpdate(
+    { _id: deviceId, controller: null },
+    { $set: { controller: { user: userId, since: now, lastActiveAt: now } } },
+    { returnDocument: 'after' },
+  );
 };
 
-deviceSchema.methods.setWifi = function (wifi) {
-  this.wifi = sealWifi(wifi);
+// Clears the controller. Returns the device as it was, or null if it had none.
+deviceSchema.statics.unclaim = function (deviceId) {
+  return this.findOneAndUpdate(
+    { _id: deviceId, controller: { $ne: null } },
+    { $set: { controller: null } },
+  );
 };
 
-// Returns the new secret in plain text, for the device's new .env file.
-deviceSchema.methods.rotateSecret = function () {
-  const secret = newToken();
-  this.secret = seal(secret);
-  this.secretVersion += 1;
-  return secret;
+deviceSchema.statics.controlledBy = function (userId) {
+  return this.findOne({ 'controller.user': userId });
 };
 
-// The devices/<id>.env file the firmware build reads. Values are JSON
-// strings, so Wi-Fi passwords with spaces, '#' or quotes survive.
-// Needs the Wi-Fi password loaded, and the secret unless it is passed in.
-deviceSchema.methods.envFile = function (secret = unseal(this.secret)) {
-  const values = {
-    DEVICE_ID: this._id,
-    DEVICE_SECRET: secret,
-    BROKER_URL: config.publicMqttUrl,
-    WIFI_SSID: this.wifi.ssid,
-    WIFI_PASS: this.wifi.password ? unseal(this.wifi.password) : '',
-  };
-  const lines = Object.entries(values).map(([key, value]) => `${key}=${JSON.stringify(value)}`);
-  return [
-    `# Device ${this._id}: SECRET, never commit or share this file.`,
-    `# Build with: make firmware DEVICE=${this._id}`,
-    ...lines,
-    '',
-  ].join('\n');
+deviceSchema.methods.isControlledBy = function (userId) {
+  return Boolean(this.controller?.user.equals(userId));
 };
 
-// ---- Members ----
-
-deviceSchema.methods.roleOf = function (userId) {
-  return this.members.find((m) => idOf(m.user).equals(userId))?.role ?? null;
-};
-
-// An owner code replaces the current owner (e.g. a lost phone). A member
-// code never downgrades someone who is already on the device.
-deviceSchema.methods.addMember = function (userId, role) {
-  if (role === 'owner') {
-    this.members = this.members.filter((m) => m.role !== 'owner' && !idOf(m.user).equals(userId));
-    this.members.push({ user: userId, role: 'owner' });
-  } else if (!this.roleOf(userId)) {
-    this.members.push({ user: userId, role: 'member' });
-  }
-};
-
-// Returns false if the user wasn't a member.
-deviceSchema.methods.removeMember = function (userId) {
-  const before = this.members.length;
-  this.members = this.members.filter((m) => !idOf(m.user).equals(userId));
-  return this.members.length < before;
-};
-
-// ---- JSON ----
-
-// What a paired phone sees: its own role, nothing about Wi-Fi or secrets.
-deviceSchema.methods.toPhoneJSON = function (userId) {
+// What the controlling phone sees.
+deviceSchema.methods.toPhoneJSON = function () {
   return {
     id: this._id,
     name: this.name,
@@ -157,36 +117,19 @@ deviceSchema.methods.toPhoneJSON = function (userId) {
     display: this.display,
     online: this.online,
     lastSeenAt: this.lastSeenAt,
-    fw: this.fw,
-    net: this.net,
     mode: this.mode,
-    role: this.roleOf(userId),
-    memberCount: this.members.length,
+    since: this.controller?.since ?? null,
   };
 };
 
-// Default JSON (admin API): never includes secrets, even when selected.
+// Default JSON (admin API): never includes the secret, even when selected.
 deviceSchema.set('toJSON', {
   transform: (_doc, json) => {
     json.id = json._id;
     delete json._id;
     delete json.secret;
-    if (json.wifi) delete json.wifi.password;
     return json;
   },
 });
-
-function newDeviceId() {
-  return `oled-${randomString(ID_ALPHABET, 6)}`;
-}
-
-function sealWifi({ ssid, password }) {
-  return { ssid, password: password ? seal(password) : undefined };
-}
-
-// A member's `user` is an ObjectId, or a User document after populate().
-function idOf(user) {
-  return user._id ?? user;
-}
 
 export const Device = mongoose.model('Device', deviceSchema);

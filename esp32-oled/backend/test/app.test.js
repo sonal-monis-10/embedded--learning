@@ -41,6 +41,7 @@ describe('loadConfig', () => {
   const valid = {
     MONGODB_URI: 'mongodb+srv://user:pass@cluster.example.net',
     ADMIN_KEY: 'a'.repeat(24),
+    PROVISION_KEY: 'p'.repeat(24),
     SECRETS_KEY: crypto.randomBytes(32).toString('base64'),
   };
 
@@ -51,13 +52,15 @@ describe('loadConfig', () => {
     assert.equal(config.mongo.dbName, 'oled');
     assert.equal(config.cleanupTimeZone, 'Asia/Kolkata');
     assert.equal(config.secretsKey.length, 32);
+    assert.equal(config.maxDevices, 20);
+    assert.equal(config.idleReleaseMs, 10 * 60_000);
   });
 
   it('names every missing variable', () => {
     assert.throws(
       () => loadConfig({}),
       (err) =>
-        ['MONGODB_URI', 'ADMIN_KEY', 'SECRETS_KEY'].every((name) =>
+        ['MONGODB_URI', 'PROVISION_KEY', 'ADMIN_KEY', 'SECRETS_KEY'].every((name) =>
           err.message.includes(`${name}: is required`),
         ),
     );

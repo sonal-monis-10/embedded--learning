@@ -506,8 +506,9 @@ log for `MQTT connected`.
 | 2026-11-01 | Devices **self-register** on first boot with a `PROVISION_KEY` in the firmware (registration only, rate-limited, capped); `ADMIN_KEY` kept for curl maintenance |
 | 2026-11-01 | A turn ends on **Leave, 10 min idle, or midnight**; the OLED then shows a fresh QR |
 | 2026-11-01 | Phones send tilt over a **WebSocket** (`/api/live`); the backend forwards it to MQTT. Phones never get broker logins |
+| 2026-11-01 | Device IDs `oled-` + 6 random characters, shown on the OLED while free (user: OK) |
+| 2026-11-01 | Basic tilt-to-eyes is part of phase 1; blinks, moods and calibration stay in phase 2 (user: OK) |
 
 ## 11. Open questions
 
-1. **Device ID format** `oled-` + 6 random characters (e.g. `oled-7k2m9q`), shown on the OLED while it is free: OK?
-2. **Robot eyes moved into phase 1** (the tilt stream is part of the pairing flow now); phase 2 keeps the richer eye behaviours (blink, shake, sleep). OK?
+None right now.

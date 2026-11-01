@@ -2,7 +2,15 @@ import { config } from '../utils/config.js';
 import { sameSecret } from '../utils/secrets.js';
 import { Session } from '../entity/session.js';
 import { Device } from '../entity/device.js';
-import { forbidden, notFound, unauthorized } from './errors.js';
+import { notFound, unauthorized } from './errors.js';
+
+// Firmware registering itself on first boot (POST /api/admin/devices).
+export function requireProvisionKey(req, _res, next) {
+  if (!sameSecret(req.get('x-provision-key') ?? '', config.provisionKey)) {
+    throw unauthorized('invalid_provision_key', 'Missing or wrong X-Provision-Key header');
+  }
+  next();
+}
 
 export function requireAdmin(req, _res, next) {
   if (!sameSecret(req.get('x-admin-key') ?? '', config.adminKey)) {
@@ -27,25 +35,13 @@ export async function optionalSession(req, _res, next) {
   next();
 }
 
-// Loads :id into req.device and the caller's role into req.role. A device
-// the caller isn't on is "not found", so strangers can't probe device IDs.
-export const requireMember = deviceAccess({ ownerOnly: false });
-export const requireOwner = deviceAccess({ ownerOnly: true });
-
-function deviceAccess({ ownerOnly }) {
-  return async (req, _res, next) => {
-    const device = await Device.findOne({ _id: req.params.id, 'members.user': req.user._id });
-    if (!device) throw notFound('device_not_found', 'No such device');
-
-    const role = device.roleOf(req.user._id);
-    if (ownerOnly && role !== 'owner') {
-      throw forbidden('owner_only', 'Only the device owner can do this');
-    }
-
-    req.device = device;
-    req.role = role;
-    next();
-  };
+// Loads :id into req.device if the caller controls it. Any other device is
+// "not found", so a phone can't even probe which device IDs exist.
+export async function requireController(req, _res, next) {
+  const device = await Device.findOne({ _id: req.params.id, 'controller.user': req.user._id });
+  if (!device) throw notFound('device_not_found', 'This screen is not yours right now');
+  req.device = device;
+  next();
 }
 
 // Sets req.session and req.user from "Authorization: Bearer <token>".

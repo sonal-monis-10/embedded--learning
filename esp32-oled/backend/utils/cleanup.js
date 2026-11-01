@@ -4,8 +4,10 @@ import { Meta } from '../entity/meta.js';
 import { PairingCode } from '../entity/pairingCode.js';
 import { Session } from '../entity/session.js';
 import { User } from '../entity/user.js';
+import { endAllTurns } from '../live/hub.js';
 import { config } from './config.js';
 import { logger } from './logger.js';
+import { sweepPairing } from './pairingIssuer.js';
 import { dateIn } from './time.js';
 
 const CHECK_INTERVAL_MS = 60_000;
@@ -13,6 +15,7 @@ const CHECK_INTERVAL_MS = 60_000;
 // Deletes everything about people and keeps device logins, so flashed boards
 // keep connecting and everyone simply pairs again.
 export async function runCleanup(reason) {
+  endAllTurns('midnight');
   const [users, sessions, codes, events, devices] = await Promise.all([
     User.deleteMany({}),
     Session.deleteMany({}),
@@ -20,7 +23,8 @@ export async function runCleanup(reason) {
     DeviceEvent.deleteMany({}),
     Device.updateMany({}, { $set: NIGHTLY_RESET }),
   ]);
-  // TODO(mqtt): delete the phones' MQTT logins (s-*) and user roles.
+  // Every device is free now: put fresh codes on the online ones.
+  await sweepPairing();
 
   const summary = {
     users: users.deletedCount,

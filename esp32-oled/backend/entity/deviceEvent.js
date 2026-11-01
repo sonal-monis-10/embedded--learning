@@ -2,23 +2,14 @@ import mongoose from 'mongoose';
 
 const { Schema } = mongoose;
 
-// Today's history of a device, shown on the admin page. Wiped nightly.
+// Today's history of a device (GET /api/admin/devices/:id). Wiped nightly.
 const deviceEventSchema = new Schema(
   {
     device: { type: String, ref: 'Device', required: true },
     type: {
       type: String,
       required: true,
-      enum: [
-        'created',
-        'wifi_changed',
-        'rotate',
-        'paired',
-        'member_removed',
-        'connect',
-        'disconnect',
-        'auth_fail',
-      ],
+      enum: ['provisioned', 'connect', 'disconnect', 'auth_fail', 'paired', 'released'],
     },
     at: { type: Date, default: Date.now },
     meta: { type: Schema.Types.Mixed, default: {} },
