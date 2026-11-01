@@ -2,6 +2,7 @@
 
 | File | What it covers |
 |------|----------------|
+| [architecture.html](architecture.html) | **Architecture diagram** (open in a browser): phone, frontend, Express + Mosquitto on Render, MongoDB, ESP32 / Wokwi, later-phase LRCLIB and Claude |
 | [how-main-works.md](how-main-works.md) | Walk-through of `firmware/src/main.cpp`: build flags, `setup()`, `loop()`, drawing calls, where to make changes |
 | [plan/](plan/README.md) | **Draft plan**: architecture, security, API, and 4 phases (foundation, robot eyes, music, AI animations) |
 | [display-ram.md](display-ram.md) | The framebuffer and the OLED's GDDRAM: page layout, the pixel formula, the I2C bytes, raw buffer access, raw commands |
