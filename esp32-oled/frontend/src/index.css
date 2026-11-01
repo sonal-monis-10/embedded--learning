@@ -1,98 +1,632 @@
+/* Warm consumer app world: tinted ground, white soft cards, one action colour
+   used only on things you can press. Every text pair meets WCAG AA. */
 :root {
-  --bg: #f6f7f9;
-  --surface: #ffffff;
-  --text: #16181d;
-  --muted: #5d6470;
-  --border: #dde1e7;
-  --ok: #1f8a4c;
-  --error: #c4352b;
-  --radius: 12px;
+  --ground: #fff4e6;
+  --card: #ffffff;
+  --surface: #f7ebdd;
+  --border: #e7dacb;
+  --ink: #2b241f;
+  --ink-2: #6f625a;
+  --action: #c94312;
+  --action-press: #ad3a10;
+  --action-tint: #fce6dc;
+  --ok-ink: #256b45;
+  --ok-tint: #e6f4ec;
+  --error-ink: #9a3412;
+  --error-tint: #fdece6;
+  --oled-off: #0b0b0c;
+  --oled-on: #e8f0ff;
 
-  font-family:
-    system-ui,
-    -apple-system,
-    'Segoe UI',
-    Roboto,
-    sans-serif;
-  line-height: 1.5;
-  color: var(--text);
-  background: var(--bg);
+  --radius-card: 20px;
+  --radius-control: 14px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  --font: 'Nunito Variable', 'Nunito', system-ui, sans-serif;
+  --shadow-card: 0 1px 2px rgba(43, 36, 31, 0.04), 0 6px 18px rgba(43, 36, 31, 0.06);
+
+  color-scheme: light;
+  font-family: var(--font);
+  color: var(--ink);
+  background: var(--ground);
+  line-height: 1.45;
+  caret-color: var(--action);
+  scrollbar-color: var(--border) var(--ground);
+  -webkit-tap-highlight-color: transparent;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0f1115;
-    --surface: #181b21;
-    --text: #e8eaee;
-    --muted: #9aa1ad;
-    --border: #2a2f38;
-    --ok: #3ccf7a;
-    --error: #ff6b5e;
-  }
-}
-
-* {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
+  margin: 0;
+  padding: 0;
 }
 
 body {
-  margin: 0;
-  background: var(--bg);
+  background: var(--ground);
+  min-height: 100dvh;
+}
+
+::selection {
+  background: var(--action-tint);
+  color: var(--ink);
+}
+
+:focus-visible {
+  outline: 3px solid var(--action);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* ---- Page frame: one column sized for a phone held in one hand ---- */
+
+.app {
+  max-width: 440px;
+  margin: 0 auto;
 }
 
 .page {
-  max-width: 40rem;
-  margin: 0 auto;
-  padding: 2rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-height: 100dvh;
+  padding: var(--space-5) var(--space-4) 0;
+}
+
+.page-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-1) 0;
+}
+
+.brand {
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: var(--ink-2);
 }
 
 h1 {
-  margin: 0 0 0.25rem;
   font-size: 1.75rem;
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
 }
 
-h2 {
-  margin: 0 0 0.5rem;
-  font-size: 1.1rem;
+.lede {
+  font-size: 1.0625rem;
+  color: var(--ink-2);
+  max-width: 34ch;
+}
+
+.top-nav {
+  display: flex;
+  margin-bottom: calc(var(--space-2) * -1);
+}
+
+.page-foot {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-1) var(--space-6);
+}
+
+/* ---- Cards ---- */
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  padding: var(--space-4);
+  color: inherit;
+  text-decoration: none;
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.card-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 1.125rem;
+  font-weight: 800;
+}
+
+.card-text {
+  color: var(--ink-2);
 }
 
 .muted {
-  color: var(--muted);
+  color: var(--ink-2);
+  font-size: 0.9375rem;
 }
 
-.mono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.9rem;
-  overflow-wrap: anywhere;
-  color: var(--muted);
+.error-card .card-title {
+  color: var(--error-ink);
 }
 
-.card {
-  margin-top: 1.5rem;
-  padding: 1rem 1.25rem;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+/* ---- The screen mirror (signature) ---- */
+
+.oled {
+  aspect-ratio: 2 / 1;
+  background: var(--oled-off);
+  border-radius: 12px;
+  padding: 4%;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
 }
 
-.status {
+.oled-pixels {
+  display: block;
+  width: 100%;
+  height: 100%;
+  fill: var(--oled-on);
+  animation: oled-redraw 240ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* A mode change redraws the screen top to bottom, like the panel refreshing. */
+@keyframes oled-redraw {
+  from {
+    clip-path: inset(0 0 100% 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+.oled-hero {
+  width: 100%;
+}
+
+.oled-small {
+  width: 96px;
+  flex: none;
+  border-radius: 8px;
+}
+
+.screen-card {
+  gap: var(--space-3);
+}
+
+.device-title {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  margin: 0;
+  gap: var(--space-2);
 }
 
-.status .dot {
-  width: 0.6rem;
-  height: 0.6rem;
+.device-name {
+  font-size: 1.25rem;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.rename {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.rename input {
+  flex: 1 1 12rem;
+}
+
+/* ---- Status pill ---- */
+
+.pill {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 0.875rem;
+  font-weight: 700;
+  background: var(--surface);
+  color: var(--ink-2);
+}
+
+.pill-dot {
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
+  border: 2px solid currentColor;
+}
+
+.pill-ok {
+  background: var(--ok-tint);
+  color: var(--ok-ink);
+}
+
+.pill-ok .pill-dot {
   background: currentColor;
 }
 
-.status.ok {
-  color: var(--ok);
+/* ---- Mode picker: three large radio cards ---- */
+
+.modes {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-2);
 }
 
-.status.error {
-  color: var(--error);
+.mode {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-height: 76px;
+  padding: var(--space-3) var(--space-1);
+  border: 2px solid var(--border);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  text-align: center;
+  transition:
+    border-color 160ms ease-out,
+    background-color 160ms ease-out;
+}
+
+.mode input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.mode-label {
+  font-size: 1.0625rem;
+  font-weight: 800;
+}
+
+.mode-hint {
+  font-size: 0.8125rem;
+  color: var(--ink-2);
+}
+
+.mode:hover {
+  border-color: var(--ink-2);
+}
+
+.mode:has(input:checked) {
+  border-color: var(--action);
+  background: var(--action-tint);
+}
+
+.mode:has(input:focus-visible) {
+  outline: 3px solid var(--action);
+  outline-offset: 3px;
+}
+
+.mode-state {
+  min-height: 1.4em;
+}
+
+/* ---- People ---- */
+
+.people {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+}
+
+.person {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  column-gap: var(--space-2);
+  padding: var(--space-3) 0;
+}
+
+.person + .person {
+  border-top: 1px solid var(--surface);
+}
+
+.person-name {
+  font-weight: 700;
+  font-size: 1.0625rem;
+}
+
+.person-meta {
+  grid-column: 1;
+  font-size: 0.875rem;
+  color: var(--ink-2);
+}
+
+.person .icon-btn {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+
+/* ---- Device list (home) ---- */
+
+.device-link {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-3);
+  transition: border-color 160ms ease-out;
+}
+
+.device-link:hover {
+  border-color: var(--ink-2);
+}
+
+.device-link-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.device-link-arrow {
+  color: var(--ink-2);
+  flex: none;
+}
+
+/* ---- Add a phone (QR) ---- */
+
+.add-phone {
+  align-items: center;
+  text-align: center;
+}
+
+.add-phone .card-head {
+  align-self: stretch;
+  text-align: left;
+}
+
+.qr {
+  width: 220px;
+  height: 220px;
+  border-radius: 12px;
+}
+
+.qr-loading {
+  background: var(--surface);
+}
+
+.code-line {
+  font-size: 1.0625rem;
+}
+
+.code {
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Forms ---- */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+label {
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+input {
+  font: inherit;
+  font-size: 1.125rem;
+  color: var(--ink);
+  background: var(--card);
+  border: 2px solid var(--border);
+  border-radius: var(--radius-control);
+  padding: 14px 16px;
+  min-height: 56px;
+  transition: border-color 160ms ease-out;
+}
+
+input:hover {
+  border-color: var(--ink-2);
+}
+
+input:focus-visible {
+  outline: none;
+  border-color: var(--action);
+  box-shadow: 0 0 0 3px var(--action-tint);
+}
+
+input[aria-invalid='true'] {
+  border-color: var(--error-ink);
+}
+
+.help {
+  font-size: 0.9375rem;
+  color: var(--ink-2);
+}
+
+.inline-error {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-control);
+  background: var(--error-tint);
+  color: var(--error-ink);
+  font-weight: 600;
+}
+
+/* ---- Buttons and links ---- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: 56px;
+  padding: 0 var(--space-5);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  font: inherit;
+  font-size: 1.0625rem;
+  font-weight: 800;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background-color 160ms ease-out,
+    border-color 160ms ease-out,
+    transform 120ms ease-out;
+}
+
+.btn:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.btn:disabled {
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--action);
+  color: #fff;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--action-press);
+}
+
+.btn-primary:disabled {
+  background: var(--surface);
+  color: var(--ink-2);
+}
+
+.btn-secondary {
+  background: var(--card);
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: var(--surface);
+}
+
+.btn-small {
+  min-height: 48px;
+  padding: 0 var(--space-4);
+  font-size: 1rem;
+}
+
+.icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink-2);
+  cursor: pointer;
+  flex: none;
+  transition: background-color 160ms ease-out;
+}
+
+.icon-btn:hover {
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.text-link,
+.text-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 44px;
+  font: inherit;
+  font-weight: 700;
+  color: var(--action);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.back-link {
+  text-decoration: none;
+  color: var(--ink-2);
+}
+
+/* The primary action stays in thumb reach at the bottom of the screen. */
+.action-bar {
+  position: sticky;
+  bottom: 0;
+  margin: auto calc(var(--space-4) * -1) 0;
+  padding: var(--space-3) var(--space-4) calc(var(--space-4) + env(safe-area-inset-bottom));
+  background: var(--ground);
+  display: flex;
+  flex-direction: column;
+}
+
+.action-bar:empty {
+  display: none;
+}
+
+/* ---- Notices and loading ---- */
+
+.notice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.skeleton {
+  min-height: 112px;
+  background: linear-gradient(90deg, var(--card) 0%, var(--surface) 50%, var(--card) 100%);
+  background-size: 200% 100%;
+  animation: skeleton 1.4s ease-in-out infinite;
+}
+
+.skeleton-tall {
+  min-height: 260px;
+}
+
+@keyframes skeleton {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
 }
