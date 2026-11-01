@@ -1,0 +1,20 @@
+# Project-wide ignores. firmware/ has its own .gitignore for PlatformIO files.
+
+# Secrets: device env files from the dashboard and any local .env.
+# Every firmware binary in out/ contains its device secret too.
+devices/*.env
+.env
+.env.*
+!.env.example
+out/
+
+# Node.js (backend/, frontend/)
+node_modules/
+dist/
+coverage/
+*.log
+
+# Editor and OS noise
+*.swp
+*~
+.DS_Store
