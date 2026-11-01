@@ -1,17 +1,29 @@
-import { describe, it } from 'node:test';
+import { after, before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import request from 'supertest';
-import { createApp } from '../src/app.js';
-import { loadConfig } from '../src/config.js';
-import { createLogger } from '../src/lib/logger.js';
+import { createApp, closeDatabase } from '../app.js';
+import { loadConfig } from '../utils/config.js';
+import { startTestDb } from './support/db.js';
 
-const config = loadConfig({ NODE_ENV: 'test', CORS_ORIGIN: 'http://localhost:5173' });
-const app = createApp({ config, logger: createLogger({ level: 'silent' }) });
+let app;
+let mongod;
+
+before(async () => {
+  const db = await startTestDb();
+  mongod = db.mongod;
+  app = await createApp({ config: db.config, logger: db.logger });
+});
+
+after(async () => {
+  await closeDatabase();
+  await mongod.stop();
+});
 
 describe('GET /healthz', () => {
-  it('returns ok', async () => {
+  it('returns ok with the database up', async () => {
     const res = await request(app).get('/healthz').expect(200);
     assert.equal(res.body.status, 'ok');
+    assert.equal(res.body.db, 'up');
     assert.equal(typeof res.body.uptimeSeconds, 'number');
   });
 
@@ -38,16 +50,25 @@ describe('errors', () => {
 });
 
 describe('loadConfig', () => {
+  const uri = 'mongodb+srv://u:p@cluster.example.net';
+
   it('applies defaults', () => {
-    const c = loadConfig({});
+    const c = loadConfig({ MONGODB_URI: uri });
     assert.equal(c.port, 8080);
     assert.equal(c.env, 'development');
+    assert.equal(c.mongo.dbName, 'oled');
   });
 
-  it('lists every invalid variable', () => {
+  it('requires MONGODB_URI', () => {
+    assert.throws(() => loadConfig({}), /MONGODB_URI: is required/);
+  });
+
+  it('lists every invalid variable without echoing the connection string', () => {
     assert.throws(
-      () => loadConfig({ PORT: 'abc', CORS_ORIGIN: 'not a url' }),
-      (err) => err.message.includes('PORT') && err.message.includes('CORS_ORIGIN'),
+      () => loadConfig({ PORT: 'abc', CORS_ORIGIN: 'not a url', MONGODB_URI: 'http://secret' }),
+      (err) =>
+        ['PORT', 'CORS_ORIGIN', 'MONGODB_URI'].every((name) => err.message.includes(name)) &&
+        !err.message.includes('http://secret'),
     );
   });
 });

@@ -98,7 +98,7 @@ can take its place.
 |-------|----------|-----|
 | Backend language | **JavaScript** (Node.js 24 LTS, ES modules), Express 5 | Your choice; same language as the frontend |
 | Frontend | **Vite + React (JavaScript)** in `frontend/`, hosted as a **Render Static Site** | Your choice; static sites are free and don't use instance hours |
-| Database | **MongoDB Atlas free tier (M0, 512 MB)**, official `mongodb` driver + `zod` validation | Your existing DB; a thin driver keeps queries visible |
+| Database | **MongoDB Atlas free tier (M0, 512 MB)**, `mongoose`, one schema file per entity in `backend/entity/`, `zod` for request validation | Your existing DB; schemas document each collection in one place |
 | Device credentials | A random secret per device, created by the backend when you add the device, stored encrypted, delivered to the firmware build in an env file | Every device is known to the server before it exists, so nothing goes missing. See §4 |
 | Wi-Fi credentials | Entered in the **Add device** form (editable later), stored encrypted, included in the device's env file | One form gives you everything the build needs |
 | Phone sign-in | User account (email + password). A phone links to the account by scanning a **one-time pairing QR** (or typing its code) shown on the dashboard | "Copy to phone" without ever copying a device secret. See §4.4 |
@@ -170,20 +170,21 @@ esp32-oled/
 │   ├── .env               local only, git-ignored (variables: §8)
 │   ├── Dockerfile             node:24-alpine + mosquitto (Alpine package, pinned)
 │   ├── mosquitto/             mosquitto.conf (localhost listeners, dynsec plugin, limits)
-│   ├── src/
-│   │   ├── server.js          startup order (§1.2): Mongo → Mosquitto → sync → HTTP
-│   │   ├── config.js          env parsing + validation (fails fast on start)
-│   │   ├── db.js              Mongo connection + index creation
-│   │   ├── crypto.js          AES-256-GCM encrypt/decrypt for stored secrets
-│   │   ├── auth/              passwords.js (scrypt), tokens.js (JWT), middleware.js
-│   │   ├── mqtt/              supervisor.js (spawn/restart + log parsing), dynsec.js (admin
-│   │   │                      commands), sync.js (MongoDB → dynsec), proxy.js (/mqtt pipe),
-│   │   │                      presence.js, publisher.js, topics.js
-│   │   ├── routes/            auth.js, devices.js, music.js, songs.js, health.js
-│   │   ├── services/          devices.js, presence.js, playback.js, lrclib.js, timelines.js
-│   │   └── lib/               errors.js, rateLimit.js, logger.js, validate.js
-│   ├── scripts/               seed-admin.js, mqtt-smoke.js
-│   └── test/                  node:test + supertest + in-memory MongoDB
+│   ├── server.js              entry point: config → createApp() → listen, graceful shutdown
+│   ├── app.js                 MongoDB connection, middleware (helmet, CORS, auth), every
+│   │                          router mounted at its path, error handlers
+│   ├── routes/                one file per area, each exports an Express Router with its
+│   │                          business logic: health.js, pairing.js, devices.js, music.js, songs.js
+│   ├── entity/                Mongoose schemas: device.js, user.js (+ session, song, playback,
+│   │                          timeline as phases need them)
+│   ├── middleware/            errors.js, auth.js (session token → req.user), rateLimit.js
+│   ├── mqtt/                  supervisor.js (spawn/restart + log parsing), dynsec.js (admin
+│   │                          commands), sync.js (MongoDB → dynsec), proxy.js (/mqtt pipe),
+│   │                          presence.js, publisher.js, topics.js
+│   ├── utils/                 config.js (env validation), logger.js, crypto.js (AES-256-GCM),
+│   │                          lrclib.js, claude.js
+│   ├── scripts/               mqtt-smoke.js
+│   └── test/                  node:test + supertest + in-memory MongoDB (test/support/)
 ├── frontend/
 │   ├── package.json
 │   ├── .env                   local only, git-ignored: VITE_API_URL, VITE_MQTT_URL

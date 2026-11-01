@@ -65,7 +65,7 @@ shared easing functions (ease-out-back for pops, ease-in for slams).
 - A **JSON Schema** describes this exactly. It is used for Claude's
   structured output *and* for validation in the backend.
 
-## D. Backend: timeline generation (`services/timelines.js`)
+## D. Backend: timeline generation (`routes/songs.js` + `utils/claude.js`)
 
 ### D1. Flow
 ```

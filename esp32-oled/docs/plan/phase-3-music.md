@@ -32,7 +32,7 @@ locks or closes the page, and survives a backend restart (stored in
 
 ## B. Backend
 
-### B1. LRCLIB client (`services/lrclib.js`)
+### B1. LRCLIB client (`utils/lrclib.js`)
 - `GET https://lrclib.net/api/search?q=…` for search, `GET /api/get/:id` for one song.
 - Sends `User-Agent: esp32-oled/<version> (<repo url>)`, which LRCLIB
   asks clients to do.
@@ -54,7 +54,7 @@ Parsed into `[[12340, "First line"], [15800, "Second line"]]`.
 - Songs with only `plainLyrics` (no timestamps) → `lyrics` unavailable;
   disc mode with a "no synced lyrics" note.
 
-### B3. Playback service (`services/playback.js`)
+### B3. Playback service (`routes/music.js`, playback clock in `mqtt/publisher.js`)
 State per device: `{songId, lyrics, positionMs, playing, updatedAt}`.
 
 | Op | Effect |

@@ -167,18 +167,18 @@ MQTT client details:
 | MQTT client (backend) | `mqtt` (MQTT.js): admin client for `$CONTROL`, presence/publisher client |
 | `/mqtt` pipe | `node:http` `upgrade` event → `node:net` socket to 127.0.0.1:9001, piped both ways |
 | Container | `backend/Dockerfile`: `node:24-alpine` + `apk add mosquitto`; Render **Docker** runtime |
-| DB | `mongodb` official driver |
+| DB | `mongoose` (one schema per entity in `entity/`) |
 | Validation | `zod` (request bodies, env config, MQTT payloads from browsers) |
 | Auth | `node:crypto` scrypt (passwords), `jose` (JWT) |
 | Logging | `pino` (JSON logs, readable in Render's log view) |
 | Rate limits | `express-rate-limit` |
 | Tests | `node:test`, `supertest`, `mongodb-memory-server`, `mqtt` (as a test client) |
 
-### C2. Startup (`src/server.js`)
+### C2. Startup (`server.js` → `createApp()` in `app.js`)
 
-1. Parse and validate env (`config.js`); exit with a clear message if
+1. Parse and validate env (`utils/config.js`); exit with a clear message if
    anything is missing (including a `SECRETS_KEY` that isn't 32 bytes).
-2. Connect to MongoDB; create indexes (`db.js`).
+2. Connect to MongoDB with Mongoose (in `app.js`); indexes come from the `entity/` schemas.
 3. **Start Mosquitto** (`mqtt/supervisor.js`): write a fresh dynsec config
    with only the admin user (`mosquitto_ctrl dynsec init`), then spawn
    `mosquitto -c mosquitto/mosquitto.conf`. Its stdout is read line by line
@@ -220,7 +220,7 @@ log_type information
 connection_messages true
 ```
 
-### C4. Dynamic Security operations (`src/mqtt/dynsec.js`)
+### C4. Dynamic Security operations (`mqtt/dynsec.js`)
 
 | Backend event | Commands sent to `$CONTROL/dynamic-security/v1` |
 |---------------|-------------------------------------------------|
@@ -235,7 +235,7 @@ Every command checks the response on `$CONTROL/dynamic-security/v1/response`
 and raises an error if it fails. The API call that triggered it then
 fails too, so MongoDB and Mosquitto never disagree silently.
 
-Presence (`src/mqtt/presence.js`):
+Presence (`mqtt/presence.js`):
 - `d/+/status` with `online: true` → `devices.online = true`, `lastSeenAt`, `fw`, `net`, event `connect`.
 - `{online: false}` (Last Will, or a clean shutdown) → `online = false`, event `disconnect`.
 - Mosquitto log line `Client <id> … not authorised` → event `auth_fail`
