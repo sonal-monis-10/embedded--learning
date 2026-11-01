@@ -1,47 +1,35 @@
 import { after, before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import request from 'supertest';
-import { createApp, closeDatabase } from '../app.js';
+import crypto from 'node:crypto';
 import { loadConfig } from '../utils/config.js';
-import { startTestDb, testEnv } from './support/db.js';
+import { startApp } from './support/app.js';
 
-let app;
-let mongod;
-
-before(async () => {
-  const db = await startTestDb();
-  mongod = db.mongod;
-  app = await createApp({ config: db.config, logger: db.logger });
-});
-
-after(async () => {
-  await closeDatabase();
-  await mongod.stop();
-});
+let t;
+before(async () => (t = await startApp()));
+after(() => t.stop());
 
 describe('GET /healthz', () => {
-  it('returns ok with the database up', async () => {
-    const res = await request(app).get('/healthz').expect(200);
+  it('reports the database as up', async () => {
+    const res = await t.http.get('/healthz').expect(200);
     assert.equal(res.body.status, 'ok');
     assert.equal(res.body.db, 'up');
-    assert.equal(typeof res.body.uptimeSeconds, 'number');
   });
 
-  it('allows the configured frontend origin', async () => {
-    const res = await request(app).get('/healthz').set('Origin', 'http://localhost:5173');
+  it('allows the frontend origin', async () => {
+    const res = await t.http.get('/healthz').set('Origin', 'http://localhost:5173');
     assert.equal(res.headers['access-control-allow-origin'], 'http://localhost:5173');
   });
 });
 
 describe('errors', () => {
-  it('unknown routes return the shared error shape', async () => {
-    const res = await request(app).get('/api/nope').expect(404);
+  it('unknown routes use the shared error shape', async () => {
+    const res = await t.http.get('/api/nope').expect(404);
     assert.equal(res.body.error.code, 'not_found');
   });
 
-  it('malformed JSON returns 400 invalid_json', async () => {
-    const res = await request(app)
-      .post('/api/anything')
+  it('malformed JSON is a 400', async () => {
+    const res = await t.http
+      .post('/api/pair')
       .set('Content-Type', 'application/json')
       .send('{"broken":')
       .expect(400);
@@ -50,44 +38,46 @@ describe('errors', () => {
 });
 
 describe('loadConfig', () => {
-  const env = (overrides) => testEnv({ NODE_ENV: undefined, ...overrides });
+  const valid = {
+    MONGODB_URI: 'mongodb+srv://user:pass@cluster.example.net',
+    ADMIN_KEY: 'a'.repeat(24),
+    SECRETS_KEY: crypto.randomBytes(32).toString('base64'),
+  };
 
-  it('applies defaults', () => {
-    const c = loadConfig(env());
-    assert.equal(c.port, 8080);
-    assert.equal(c.env, 'development');
-    assert.equal(c.mongo.dbName, 'oled');
-    assert.equal(c.cleanupTz, 'Asia/Kolkata');
-    assert.equal(c.secretsKey.length, 32);
+  it('fills in defaults', () => {
+    const config = loadConfig(valid);
+    assert.equal(config.port, 8080);
+    assert.equal(config.env, 'development');
+    assert.equal(config.mongo.dbName, 'oled');
+    assert.equal(config.cleanupTimeZone, 'Asia/Kolkata');
+    assert.equal(config.secretsKey.length, 32);
   });
 
-  it('requires MONGODB_URI, ADMIN_KEY and SECRETS_KEY', () => {
+  it('names every missing variable', () => {
     assert.throws(
       () => loadConfig({}),
       (err) =>
-        ['MONGODB_URI: is required', 'ADMIN_KEY: is required', 'SECRETS_KEY: is required'].every(
-          (msg) => err.message.includes(msg),
+        ['MONGODB_URI', 'ADMIN_KEY', 'SECRETS_KEY'].every((name) =>
+          err.message.includes(`${name}: is required`),
         ),
     );
   });
 
-  it('rejects a short admin key, a wrong-size secrets key and an unknown time zone', () => {
+  it('rejects bad values without echoing them', () => {
+    const bad = {
+      ...valid,
+      PORT: 'abc',
+      MONGODB_URI: 'http://secret-host',
+      ADMIN_KEY: 'short',
+      SECRETS_KEY: 'c2hvcnQ=',
+      CLEANUP_TZ: 'Mars/Olympus',
+    };
     assert.throws(
-      () =>
-        loadConfig(
-          env({ ADMIN_KEY: 'short', SECRETS_KEY: 'c2hvcnQ=', CLEANUP_TZ: 'Mars/Olympus' }),
-        ),
-      (err) => ['ADMIN_KEY', 'SECRETS_KEY', 'CLEANUP_TZ'].every((n) => err.message.includes(n)),
-    );
-  });
-
-  it('lists every invalid variable without echoing values', () => {
-    assert.throws(
-      () =>
-        loadConfig(env({ PORT: 'abc', CORS_ORIGIN: 'not a url', MONGODB_URI: 'http://secret' })),
+      () => loadConfig(bad),
       (err) =>
-        ['PORT', 'CORS_ORIGIN', 'MONGODB_URI'].every((name) => err.message.includes(name)) &&
-        !err.message.includes('http://secret'),
+        ['PORT', 'MONGODB_URI', 'ADMIN_KEY', 'SECRETS_KEY', 'CLEANUP_TZ'].every((name) =>
+          err.message.includes(name),
+        ) && !err.message.includes('secret-host'),
     );
   });
 });

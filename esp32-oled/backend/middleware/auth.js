@@ -1,75 +1,62 @@
-import { HttpError } from './errors.js';
-import { safeEqual, sha256 } from '../utils/crypto.js';
+import { config } from '../utils/config.js';
+import { sameSecret } from '../utils/secrets.js';
 import { Session } from '../entity/session.js';
 import { Device } from '../entity/device.js';
+import { forbidden, notFound, unauthorized } from './errors.js';
 
-// ---- Admin ------------------------------------------------------------------
-
-// /api/admin/* needs the X-Admin-Key header to equal ADMIN_KEY.
-export function requireAdmin(req, res, next) {
-  const key = req.get('x-admin-key');
-  if (!key || !safeEqual(key, req.app.locals.config.adminKey)) {
-    throw new HttpError(401, 'invalid_admin_key', 'Missing or wrong X-Admin-Key header');
+export function requireAdmin(req, _res, next) {
+  if (!sameSecret(req.get('x-admin-key') ?? '', config.adminKey)) {
+    throw unauthorized('invalid_admin_key', 'Missing or wrong X-Admin-Key header');
   }
   next();
 }
 
-// ---- Paired phones ----------------------------------------------------------
-
-// Reads "Authorization: Bearer <token>" and returns the live session (with
-// its user), or null. Expired sessions are rejected here even if MongoDB's
-// TTL cleanup or the nightly cleanup hasn't deleted them yet.
-async function findSession(req) {
-  const match = /^Bearer\s+(\S+)$/i.exec(req.get('authorization') ?? '');
-  if (!match) return null;
-
-  const now = new Date();
-  const session = await Session.findOneAndUpdate(
-    { tokenHash: sha256(match[1]), expiresAt: { $gt: now } },
-    { $set: { lastUsedAt: now } },
-    { returnDocument: 'after' },
-  ).populate('user');
-  return session?.user ? session : null;
-}
-
-// Attaches req.session / req.user when a valid token is sent, otherwise
-// continues without them. Used by POST /api/pair, which works either way.
-export async function optionalSession(req, res, next) {
-  const session = await findSession(req);
-  if (session) {
-    req.session = session;
-    req.user = session.user;
-  }
-  next();
-}
-
-export async function requireSession(req, res, next) {
-  const session = await findSession(req);
-  if (!session) {
-    throw new HttpError(
-      401,
+export async function requireSession(req, _res, next) {
+  if (!(await attachSession(req))) {
+    throw unauthorized(
       'session_required',
-      'Scan a device pairing QR to continue (sessions end at midnight)',
+      'Scan a pairing QR to continue. Sessions end at midnight.',
     );
   }
-  req.session = session;
-  req.user = session.user;
   next();
 }
 
-// Loads :id as req.device if the current user is a member with at least
-// `role`. A device the user isn't a member of is reported as not found, so
-// strangers can't even confirm that a device ID exists.
-export function requireDeviceRole(role) {
-  return async (req, res, next) => {
-    const device = await Device.findOne({ _id: req.params.id, 'members.user': req.user._id });
-    if (!device) throw new HttpError(404, 'device_not_found', 'No such device');
+// For routes that work with or without a session, like POST /api/pair.
+export async function optionalSession(req, _res, next) {
+  await attachSession(req);
+  next();
+}
 
-    req.role = device.roleOf(req.user._id);
-    if (role === 'owner' && req.role !== 'owner') {
-      throw new HttpError(403, 'owner_only', 'Only the device owner can do this');
+// Loads :id into req.device and the caller's role into req.role. A device
+// the caller isn't on is "not found", so strangers can't probe device IDs.
+export const requireMember = deviceAccess({ ownerOnly: false });
+export const requireOwner = deviceAccess({ ownerOnly: true });
+
+function deviceAccess({ ownerOnly }) {
+  return async (req, _res, next) => {
+    const device = await Device.findOne({ _id: req.params.id, 'members.user': req.user._id });
+    if (!device) throw notFound('device_not_found', 'No such device');
+
+    const role = device.roleOf(req.user._id);
+    if (ownerOnly && role !== 'owner') {
+      throw forbidden('owner_only', 'Only the device owner can do this');
     }
+
     req.device = device;
+    req.role = role;
     next();
   };
+}
+
+// Sets req.session and req.user from "Authorization: Bearer <token>".
+async function attachSession(req) {
+  const token = /^Bearer\s+(\S+)$/i.exec(req.get('authorization') ?? '')?.[1];
+  if (!token) return false;
+
+  const session = await Session.findActive(token);
+  if (!session?.user) return false;
+
+  req.session = session;
+  req.user = session.user;
+  return true;
 }

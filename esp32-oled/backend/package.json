@@ -10,7 +10,7 @@
   "scripts": {
     "start": "node --env-file-if-exists=.env server.js",
     "dev": "node --watch --env-file-if-exists=.env server.js | pino-pretty",
-    "test": "node --test \"test/**/*.test.js\"",
+    "test": "node --test --test-global-setup=test/global-setup.js --test-concurrency=1 \"test/**/*.test.js\"",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check ."

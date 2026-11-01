@@ -182,7 +182,7 @@ esp32-oled/
 │   ├── mqtt/                  supervisor.js (spawn/restart + log parsing), dynsec.js (admin
 │   │                          commands), sync.js (MongoDB → dynsec), proxy.js (/mqtt pipe),
 │   │                          presence.js, publisher.js, topics.js
-│   ├── utils/                 config.js (env validation), logger.js, crypto.js (AES-256-GCM),
+│   ├── utils/                 config.js (env → `config`), logger.js, secrets.js (seal/unseal, tokens), time.js, cleanup.js,
 │   │                          lrclib.js, claude.js
 │   ├── scripts/               mqtt-smoke.js
 │   └── test/                  node:test + supertest + in-memory MongoDB (test/support/)

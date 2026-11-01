@@ -1,47 +1,49 @@
-// Time-zone helpers for the nightly cleanup, built on Intl so no date library
-// is needed. "Midnight" means 00:00 in config.cleanupTz (Asia/Kolkata).
+// "Midnight" for the nightly cleanup means 00:00 in config.cleanupTimeZone.
 
-function partsIn(date, timeZone) {
-  const fmt = new Intl.DateTimeFormat('en-US', {
+// The calendar date in `timeZone`, e.g. "2026-11-01".
+export function dateIn(timeZone, now = new Date()) {
+  const { year, month, day } = clockIn(timeZone, now);
+  return `${year}-${pad(month)}-${pad(day)}`;
+}
+
+// The next 00:00 in `timeZone` after `now`.
+export function nextMidnight(timeZone, now = new Date()) {
+  const { year, month, day } = clockIn(timeZone, now);
+  // Tomorrow 00:00 as if the zone were UTC, shifted back by the zone's offset.
+  const tomorrowAsUtc = Date.UTC(year, month - 1, day + 1);
+  return new Date(tomorrowAsUtc - utcOffsetMs(timeZone, new Date(tomorrowAsUtc)));
+}
+
+function clockIn(timeZone, date) {
+  const parts = new Intl.DateTimeFormat('en-US', {
     timeZone,
     hourCycle: 'h23',
     year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  });
-  const p = Object.fromEntries(fmt.formatToParts(date).map(({ type, value }) => [type, value]));
+    month: 'numeric',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: 'numeric',
+    second: 'numeric',
+  }).formatToParts(date);
+
+  const get = (type) => Number(parts.find((p) => p.type === type).value);
   return {
-    year: Number(p.year),
-    month: Number(p.month),
-    day: Number(p.day),
-    hour: Number(p.hour),
-    minute: Number(p.minute),
-    second: Number(p.second),
+    year: get('year'),
+    month: get('month'),
+    day: get('day'),
+    hour: get('hour'),
+    minute: get('minute'),
+    second: get('second'),
   };
 }
 
-// The calendar date in `timeZone`, e.g. "2026-11-01". Compared against the
-// date of the last cleanup to decide whether one is due.
-export function dateIn(timeZone, now = new Date()) {
-  const { year, month, day } = partsIn(now, timeZone);
-  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+// How far `timeZone` is ahead of UTC at `date`, e.g. +5:30 h for Asia/Kolkata.
+function utcOffsetMs(timeZone, date) {
+  const c = clockIn(timeZone, date);
+  const wallClockAsUtc = Date.UTC(c.year, c.month - 1, c.day, c.hour, c.minute, c.second);
+  return wallClockAsUtc - (date.getTime() - date.getMilliseconds());
 }
 
-// How far `timeZone` is ahead of UTC at `date`, in ms (IST: +5:30).
-function offsetMs(date, timeZone) {
-  const p = partsIn(date, timeZone);
-  const asUtc = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second);
-  return asUtc - Math.floor(date.getTime() / 1000) * 1000;
-}
-
-// The next 00:00 in `timeZone` after `now`. Sessions expire at this instant.
-export function nextMidnight(timeZone, now = new Date()) {
-  const { year, month, day } = partsIn(now, timeZone);
-  // Midnight of the next local day, first computed as if the zone were UTC,
-  // then shifted by the zone's offset. Date.UTC rolls day 32 into the next month.
-  const localMidnightAsUtc = Date.UTC(year, month - 1, day + 1);
-  return new Date(localMidnightAsUtc - offsetMs(new Date(localMidnightAsUtc), timeZone));
+function pad(n) {
+  return String(n).padStart(2, '0');
 }

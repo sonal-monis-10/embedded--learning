@@ -2,23 +2,24 @@ import mongoose from 'mongoose';
 
 const { Schema } = mongoose;
 
-export const DEVICE_EVENT_TYPES = [
-  'created',
-  'wifi_changed',
-  'rotate',
-  'paired',
-  'member_removed',
-  'connect',
-  'disconnect',
-  'auth_fail',
-];
-
-// What happened to a device today, shown on the admin page. Deleted by the
-// nightly cleanup.
+// Today's history of a device, shown on the admin page. Wiped nightly.
 const deviceEventSchema = new Schema(
   {
     device: { type: String, ref: 'Device', required: true },
-    type: { type: String, enum: DEVICE_EVENT_TYPES, required: true },
+    type: {
+      type: String,
+      required: true,
+      enum: [
+        'created',
+        'wifi_changed',
+        'rotate',
+        'paired',
+        'member_removed',
+        'connect',
+        'disconnect',
+        'auth_fail',
+      ],
+    },
     at: { type: Date, default: Date.now },
     meta: { type: Schema.Types.Mixed, default: {} },
   },
@@ -27,7 +28,7 @@ const deviceEventSchema = new Schema(
 
 deviceEventSchema.index({ device: 1, at: -1 });
 
-deviceEventSchema.statics.record = function record(device, type, meta = {}) {
+deviceEventSchema.statics.record = function (device, type, meta = {}) {
   return this.create({ device, type, meta });
 };
 

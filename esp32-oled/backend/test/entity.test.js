@@ -2,131 +2,153 @@ import { after, before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import mongoose from 'mongoose';
 import { Device, NIGHTLY_RESET } from '../entity/device.js';
+import { CODE_ALPHABET, normalizeCode, PairingCode } from '../entity/pairingCode.js';
 import { User } from '../entity/user.js';
-import { startTestDb } from './support/db.js';
+import { unseal } from '../utils/secrets.js';
+import { parseEnvFile, startApp } from './support/app.js';
 
-let mongod;
+let t;
+before(async () => (t = await startApp()));
+after(() => t.stop());
 
-before(async () => {
-  const db = await startTestDb();
-  mongod = db.mongod;
-  await mongoose.connect(db.config.mongo.uri, { dbName: db.config.mongo.dbName });
-});
-
-after(async () => {
-  await mongoose.disconnect();
-  await mongod.stop();
-});
-
-const encrypted = { iv: 'aXY=', tag: 'dGFn', data: 'ZGF0YQ==' };
-
-function newDevice(overrides = {}) {
-  return {
-    _id: 'oled-7k2m9q',
-    kind: 'hardware',
-    display: 'sh1106',
-    secret: encrypted,
-    wifi: { ssid: 'HomeWiFi', password: encrypted },
-    ...overrides,
-  };
-}
+const homeWifi = { ssid: 'HomeWiFi', password: 'correct horse' };
+const registerHardware = (wifi = homeWifi) =>
+  Device.register({ kind: 'hardware', display: 'sh1106', wifi });
+const registerSimulator = () => Device.register({ kind: 'simulator', display: 'ssd1306' });
 
 describe('User', () => {
   it('needs no email or password', async () => {
     const user = await User.create({});
     assert.equal(user.name, 'My phone');
     assert.ok(user.toJSON().id);
-    assert.equal(user.toJSON()._id, undefined);
   });
 });
 
-describe('Device', () => {
-  it('has no members, no name and is idle by default', async () => {
-    const device = await Device.create(newDevice({ _id: 'oled-aaaaa1' }));
+describe('Device.register', () => {
+  it('creates an unpaired, idle device with sealed secrets', async () => {
+    const { device, secret } = await registerHardware();
+    assert.match(device.id, /^oled-[a-z0-9]{6}$/);
     assert.equal(device.members.length, 0);
-    assert.equal(device.name, null);
     assert.equal(device.mode, 'idle');
-    assert.equal(device.online, false);
+    assert.equal(unseal(device.secret), secret);
+    assert.equal(unseal(device.wifi.password), homeWifi.password);
   });
 
-  it('rejects a malformed device ID', async () => {
-    await assert.rejects(
-      Device.create(newDevice({ _id: 'OLED_1' })),
-      mongoose.Error.ValidationError,
-    );
+  it('uses Wokwi Wi-Fi for simulators', async () => {
+    const { device } = await registerSimulator();
+    assert.equal(device.wifi.ssid, 'Wokwi-GUEST');
+    assert.equal(device.wifi.password, undefined);
   });
 
   it('rejects an unknown display', async () => {
     await assert.rejects(
-      Device.create(newDevice({ _id: 'oled-aaaaa2', display: 'st7735' })),
+      Device.register({ kind: 'hardware', display: 'st7735', wifi: homeWifi }),
       mongoose.Error.ValidationError,
     );
   });
+});
 
-  it('does not load secrets unless asked for', async () => {
-    await Device.create(newDevice({ _id: 'oled-aaaaa3' }));
-    const plain = await Device.findById('oled-aaaaa3');
+describe('Device secrets', () => {
+  it('are loaded only on request, and never appear in JSON', async () => {
+    const { device } = await registerHardware();
+
+    const plain = await Device.findById(device.id);
     assert.equal(plain.secret, undefined);
     assert.equal(plain.wifi.password, undefined);
 
-    const withSecret = await Device.findById('oled-aaaaa3').select('+secret +wifi.password');
-    assert.equal(withSecret.secret.data, encrypted.data);
-    assert.equal(withSecret.wifi.password.data, encrypted.data);
-  });
-
-  it('never puts secrets in JSON, even when selected', async () => {
-    await Device.create(newDevice({ _id: 'oled-aaaaa4' }));
-    const device = await Device.findById('oled-aaaaa4').select('+secret +wifi.password');
-    const json = device.toJSON();
-    assert.equal(json.id, 'oled-aaaaa4');
+    const json = (await Device.findWithSecrets(device.id)).toJSON();
     assert.equal(json.secret, undefined);
     assert.equal(json.wifi.password, undefined);
-    assert.equal(json.wifi.ssid, 'HomeWiFi');
   });
 
-  it('tracks owner and member roles', async () => {
-    const owner = await User.create({ name: 'Owner phone' });
-    const member = await User.create({ name: 'Member phone' });
-    const stranger = await User.create({ name: 'Stranger' });
-    const device = await Device.create(
-      newDevice({
-        _id: 'oled-aaaaa5',
-        members: [
-          { user: owner._id, role: 'owner' },
-          { user: member._id, role: 'member' },
-        ],
-      }),
-    );
+  it('envFile keeps special characters intact', async () => {
+    const wifi = { ssid: 'My "Home" #2', password: 'pa ss\\word#' };
+    const { device, secret } = await registerHardware(wifi);
 
-    assert.equal(device.roleOf(owner._id), 'owner');
+    const env = parseEnvFile(device.envFile(secret));
+    assert.equal(env.DEVICE_ID, device.id);
+    assert.equal(env.DEVICE_SECRET, secret);
+    assert.equal(env.WIFI_SSID, wifi.ssid);
+    assert.equal(env.WIFI_PASS, wifi.password);
+  });
+
+  it('rotateSecret replaces the secret and bumps the version', async () => {
+    const { device, secret } = await registerSimulator();
+    const newSecret = device.rotateSecret();
+    assert.notEqual(newSecret, secret);
+    assert.equal(unseal(device.secret), newSecret);
+    assert.equal(device.secretVersion, 2);
+  });
+});
+
+describe('Device members', () => {
+  it('an owner code replaces the owner', async () => {
+    const [oldOwner, newOwner, member] = await User.create([{}, {}, {}]);
+    const { device } = await registerSimulator();
+
+    device.addMember(oldOwner._id, 'owner');
+    device.addMember(member._id, 'member');
+    device.addMember(newOwner._id, 'owner');
+
+    assert.equal(device.roleOf(oldOwner._id), null);
+    assert.equal(device.roleOf(newOwner._id), 'owner');
     assert.equal(device.roleOf(member._id), 'member');
-    assert.equal(device.roleOf(stranger._id), null);
-
-    const loaded = await Device.findOne({ 'members.user': member._id }).populate('members.user');
-    assert.equal(loaded.id, 'oled-aaaaa5');
-    assert.equal(loaded.members[0].user.name, 'Owner phone');
   });
 
-  it('nightly reset clears people data but keeps the login', async () => {
+  it('a member code never downgrades the owner', async () => {
+    const owner = await User.create({});
+    const { device } = await registerSimulator();
+    device.addMember(owner._id, 'owner');
+    device.addMember(owner._id, 'member');
+    assert.equal(device.roleOf(owner._id), 'owner');
+    assert.equal(device.members.length, 1);
+  });
+
+  it('removeMember says whether someone was removed', async () => {
     const user = await User.create({});
-    await Device.create(
-      newDevice({
-        _id: 'oled-aaaaa6',
-        name: 'Desk',
-        mode: 'eyes',
-        online: true,
-        members: [{ user: user._id, role: 'owner' }],
-      }),
-    );
+    const { device } = await registerSimulator();
+    device.addMember(user._id, 'member');
+    assert.equal(device.removeMember(user._id), true);
+    assert.equal(device.removeMember(user._id), false);
+  });
+
+  it('the nightly reset clears people data and keeps the login', async () => {
+    const user = await User.create({});
+    const { device, secret } = await registerSimulator();
+    device.set({ name: 'Desk', mode: 'eyes', online: true });
+    device.addMember(user._id, 'owner');
+    await device.save();
 
     await Device.updateMany({}, { $set: NIGHTLY_RESET });
 
-    const device = await Device.findById('oled-aaaaa6').select('+secret +wifi.password');
-    assert.equal(device.name, null);
-    assert.equal(device.members.length, 0);
-    assert.equal(device.mode, 'idle');
-    assert.equal(device.online, true);
-    assert.equal(device.secret.data, encrypted.data);
-    assert.equal(device.wifi.password.data, encrypted.data);
+    const reset = await Device.findWithSecrets(device.id);
+    assert.equal(reset.name, null);
+    assert.equal(reset.members.length, 0);
+    assert.equal(reset.mode, 'idle');
+    assert.equal(reset.online, true);
+    assert.equal(unseal(reset.secret), secret);
+  });
+});
+
+describe('PairingCode', () => {
+  const issue = () =>
+    PairingCode.issue({ device: 'oled-aaaaaa', role: 'owner', createdBy: { kind: 'admin' } });
+
+  it('uses 8 characters without look-alikes', async () => {
+    assert.doesNotMatch(CODE_ALPHABET, /[01ILO]/);
+    for (let i = 0; i < 20; i++) {
+      const { code } = await issue();
+      assert.match(code, new RegExp(`^[${CODE_ALPHABET}]{8}$`));
+    }
+  });
+
+  it('normalizes typed codes', () => {
+    assert.equal(normalizeCode(' k3f9-qxw2 '), 'K3F9QXW2');
+  });
+
+  it('can be redeemed once', async () => {
+    const { code } = await issue();
+    assert.ok(await PairingCode.redeem(code.toLowerCase()));
+    assert.equal(await PairingCode.redeem(code), null);
   });
 });

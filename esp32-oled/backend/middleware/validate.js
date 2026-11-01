@@ -1,15 +1,15 @@
-import { HttpError } from './errors.js';
+import { badRequest } from './errors.js';
 
-// Validates req.body against a zod schema and replaces it with the parsed
-// (trimmed, defaulted) value. Every problem is listed in one 400 response.
-export function validateBody(schema) {
-  return (req, res, next) => {
+// Replaces req.body with the parsed value (trimmed, defaults filled in), or
+// answers 400 listing every problem.
+export function validate(schema) {
+  return (req, _res, next) => {
     const result = schema.safeParse(req.body ?? {});
     if (!result.success) {
-      const message = result.error.issues
-        .map((issue) => `${issue.path.join('.') || 'body'}: ${issue.message}`)
-        .join('; ');
-      throw new HttpError(400, 'invalid_request', message);
+      const problems = result.error.issues.map(
+        (i) => `${i.path.join('.') || 'body'}: ${i.message}`,
+      );
+      throw badRequest('invalid_request', problems.join('; '));
     }
     req.body = result.data;
     next();

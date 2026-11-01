@@ -1,11 +1,8 @@
 import pino from 'pino';
+import { config } from './config.js';
 
-// JSON logs: Render's log view shows one line per entry. In development,
-// `npm run dev` pipes them through pino-pretty for readable output.
-export function createLogger({ level }) {
-  return pino({
-    level,
-    // Never log credentials, even by accident (e.g. logging a whole request).
-    redact: ['req.headers.authorization', '*.password', '*.secret', '*.token'],
-  });
-}
+// JSON lines for Render's log view; `npm run dev` pipes them through pino-pretty.
+export const logger = pino({
+  level: config.logLevel,
+  redact: ['req.headers.authorization', 'req.headers["x-admin-key"]', '*.password', '*.secret'],
+});

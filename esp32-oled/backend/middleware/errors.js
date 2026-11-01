@@ -1,7 +1,7 @@
-// Every error response has the same shape:
-//   { "error": { "code": "device_not_found", "message": "…" } }
-// so the frontend can branch on `code` instead of parsing messages.
+import { logger } from '../utils/logger.js';
 
+// Every error response has the same shape, so the frontend can branch on
+// `code`:   { "error": { "code": "device_not_found", "message": "No such device" } }
 export class HttpError extends Error {
   constructor(status, code, message) {
     super(message);
@@ -10,34 +10,31 @@ export class HttpError extends Error {
   }
 }
 
-export function notFound(req, res) {
-  res
-    .status(404)
-    .json({ error: { code: 'not_found', message: `No route for ${req.method} ${req.path}` } });
+export const badRequest = (code, message) => new HttpError(400, code, message);
+export const unauthorized = (code, message) => new HttpError(401, code, message);
+export const forbidden = (code, message) => new HttpError(403, code, message);
+export const notFound = (code, message) => new HttpError(404, code, message);
+
+export function unknownRoute(req, res) {
+  sendError(res, notFound('not_found', `No route for ${req.method} ${req.path}`));
 }
 
-export function errorHandler(logger) {
-  // Express recognises error handlers by their four parameters, so `next`
-  // must stay even though it is unused.
-  // eslint-disable-next-line no-unused-vars
-  return (err, req, res, next) => {
-    if (err instanceof HttpError) {
-      return res.status(err.status).json({ error: { code: err.code, message: err.message } });
-    }
-    // express.json() reports malformed bodies with type 'entity.parse.failed'.
-    if (err.type === 'entity.parse.failed') {
-      return res
-        .status(400)
-        .json({ error: { code: 'invalid_json', message: 'Request body is not valid JSON' } });
-    }
-    if (err.type === 'entity.too.large') {
-      return res
-        .status(413)
-        .json({ error: { code: 'body_too_large', message: 'Request body is too large' } });
-    }
+// Express treats a middleware with four parameters as the error handler.
+export function errorHandler(err, req, res, _next) {
+  if (err instanceof HttpError) return sendError(res, err);
 
-    // Anything else is a bug: log the details, return nothing internal.
-    logger.error({ err, method: req.method, path: req.path }, 'unhandled error');
-    return res.status(500).json({ error: { code: 'internal', message: 'Internal server error' } });
-  };
+  // Thrown by express.json() for unreadable bodies.
+  if (err.type === 'entity.parse.failed') {
+    return sendError(res, badRequest('invalid_json', 'Request body is not valid JSON'));
+  }
+  if (err.type === 'entity.too.large') {
+    return sendError(res, new HttpError(413, 'body_too_large', 'Request body is too large'));
+  }
+
+  logger.error({ err, method: req.method, path: req.path }, 'unhandled error');
+  sendError(res, new HttpError(500, 'internal', 'Internal server error'));
+}
+
+function sendError(res, { status, code, message }) {
+  res.status(status).json({ error: { code, message } });
 }
