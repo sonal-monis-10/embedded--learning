@@ -1,0 +1,6 @@
+# Prettier reads the .prettierignore in the folder it runs from, so each
+# package needs its own.
+node_modules/
+dist/
+coverage/
+package-lock.json

@@ -18,8 +18,33 @@ FIRMWARE_TARGETS := help oled oled-ssd1306 scanner monitor \
                     upload upload-ssd1306 upload-scanner \
                     clean clean-all ports
 
-.PHONY: $(FIRMWARE_TARGETS)
+.PHONY: $(FIRMWARE_TARGETS) install lint test dev-backend dev-frontend
 
 # -C firmware: run make inside firmware/, where platformio.ini lives.
 $(FIRMWARE_TARGETS):
 	$(MAKE) -C firmware $@
+
+# ---------------------------------------------------------------------------
+#  BACKEND + FRONTEND (Node.js 24, see .nvmrc; run `nvm use` first)
+# ---------------------------------------------------------------------------
+
+# npm ci installs exactly what package-lock.json lists.
+install:
+	cd backend && npm ci
+	cd frontend && npm ci
+
+lint:
+	cd backend && npm run lint && npm run format:check
+	cd frontend && npm run lint && npm run format:check
+
+# Frontend has no tests yet; a successful production build is the check.
+test:
+	cd backend && npm test
+	cd frontend && npm run build
+
+# Each in its own terminal. Backend: http://localhost:8080, frontend: :5173
+dev-backend:
+	cd backend && npm run dev
+
+dev-frontend:
+	cd frontend && npm run dev

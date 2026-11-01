@@ -18,7 +18,7 @@ Shared design (security, data model, topics, API list): [README.md](README.md).
 | A2 | Update paths | `.vscode/` (PlatformIO project path), `.gitignore` (`firmware/.pio/`, `devices/*.env`, `out/`, `node_modules/`, `.env`), docs links |
 | A3 | Root `Makefile` | `make firmware DEVICE=<id> [TARGET=hw\|sim]`, `make flash DEVICE=<id> PORT=…`, `make sim DEVICE=<id>`, `make dev`, `make test` |
 | A4 | `devices/README.md` (committed) | Explains that `*.env` files here are secrets and git-ignored |
-| A5 | Scaffold `backend/` and `frontend/` | `npm init`, ESLint + Prettier shared config, `.env.example` files |
+| A5 | Scaffold `backend/` and `frontend/` | Done: Express 5 skeleton (`/healthz`, config validation, error shape, tests) and Vite + React app calling it; ESLint + shared Prettier config, `.nvmrc` (Node 24) |
 
 ---
 
@@ -161,12 +161,12 @@ MQTT client details:
 
 | Concern | Choice |
 |---------|--------|
-| Runtime | Node.js 22 LTS, ES modules (`"type": "module"`) |
+| Runtime | Node.js 24 LTS, ES modules (`"type": "module"`) |
 | HTTP | Express 5, `helmet`, `cors` |
 | MQTT broker | **Mosquitto 2.x** (Alpine package, version pinned) + Dynamic Security plugin, started by the backend as a child process |
 | MQTT client (backend) | `mqtt` (MQTT.js): admin client for `$CONTROL`, presence/publisher client |
 | `/mqtt` pipe | `node:http` `upgrade` event → `node:net` socket to 127.0.0.1:9001, piped both ways |
-| Container | `backend/Dockerfile`: `node:22-alpine` + `apk add mosquitto`; Render **Docker** runtime |
+| Container | `backend/Dockerfile`: `node:24-alpine` + `apk add mosquitto`; Render **Docker** runtime |
 | DB | `mongodb` official driver |
 | Validation | `zod` (request bodies, env config, MQTT payloads from browsers) |
 | Auth | `node:crypto` scrypt (passwords), `jose` (JWT) |
@@ -312,7 +312,7 @@ needed yet.
 
 ### D3. Plumbing
 
-- `api/client.js`: adds the Bearer token. On `401` it calls
+- `services/client.js`: adds the Bearer token. On `401` it calls
   `/auth/refresh` once, retries, and otherwise sends you to `/login`.
 - `mqtt/useMqtt.js`: gets this session's MQTT username/password from
   `/api/auth/mqtt-token`, connects, and subscribes to `d/<id>/status` for

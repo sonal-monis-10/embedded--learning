@@ -96,7 +96,7 @@ can take its place.
 
 | Topic | Decision | Why |
 |-------|----------|-----|
-| Backend language | **JavaScript** (Node.js 22 LTS, ES modules), Express 5 | Your choice; same language as the frontend |
+| Backend language | **JavaScript** (Node.js 24 LTS, ES modules), Express 5 | Your choice; same language as the frontend |
 | Frontend | **Vite + React (JavaScript)** in `frontend/`, hosted as a **Render Static Site** | Your choice; static sites are free and don't use instance hours |
 | Database | **MongoDB Atlas free tier (M0, 512 MB)**, official `mongodb` driver + `zod` validation | Your existing DB; a thin driver keeps queries visible |
 | Device credentials | A random secret per device, created by the backend when you add the device, stored encrypted, delivered to the firmware build in an env file | Every device is known to the server before it exists, so nothing goes missing. See §4 |
@@ -167,8 +167,8 @@ esp32-oled/
 │   └── Makefile               local (non-Docker) shortcuts, as today
 ├── backend/
 │   ├── package.json           "type": "module"
-│   ├── .env.example
-│   ├── Dockerfile             node:22-alpine + mosquitto (Alpine package, pinned)
+│   ├── .env               local only, git-ignored (variables: §8)
+│   ├── Dockerfile             node:24-alpine + mosquitto (Alpine package, pinned)
 │   ├── mosquitto/             mosquitto.conf (localhost listeners, dynsec plugin, limits)
 │   ├── src/
 │   │   ├── server.js          startup order (§1.2): Mongo → Mosquitto → sync → HTTP
@@ -186,11 +186,11 @@ esp32-oled/
 │   └── test/                  node:test + supertest + in-memory MongoDB
 ├── frontend/
 │   ├── package.json
-│   ├── .env.example           VITE_API_URL, VITE_MQTT_URL
+│   ├── .env                   local only, git-ignored: VITE_API_URL, VITE_MQTT_URL
 │   ├── index.html
 │   └── src/
 │       ├── main.jsx, App.jsx  router
-│       ├── api/               client.js (fetch + token refresh), endpoints
+│       ├── services/          client.js (fetch + token refresh), one module per API area
 │       ├── mqtt/              useMqtt.js (MQTT.js hook)
 │       ├── sensors/           useOrientation.js (phase 2)
 │       ├── pages/             Login, Pair, Devices, DeviceNew, DeviceDetail, Settings
