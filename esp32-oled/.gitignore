@@ -21,3 +21,9 @@ coverage/
 *.swp
 *~
 .DS_Store
+
+# Agent skills installed locally (graphify, impeccable, diagram-design,
+# readme-wizard) and graphify's generated code graph. Not committed.
+.claude/skills/
+.claude/agents/
+graphify-out/
