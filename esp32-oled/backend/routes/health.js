@@ -18,6 +18,9 @@ function health(_req, res) {
     status: healthy ? 'ok' : 'degraded',
     db: dbUp ? 'up' : 'down',
     broker,
+    // Set by Render. The deploy workflow waits for the pushed commit here
+    // before it builds the frontend.
+    commit: process.env.RENDER_GIT_COMMIT ?? null,
     uptimeSeconds: Math.round(process.uptime()),
   });
 }

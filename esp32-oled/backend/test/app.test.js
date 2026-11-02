@@ -13,6 +13,7 @@ describe('GET /healthz', () => {
     const res = await t.http.get('/healthz').expect(200);
     assert.equal(res.body.status, 'ok');
     assert.equal(res.body.db, 'up');
+    assert.ok('commit' in res.body); // the deploy workflow waits on it
   });
 
   it('allows the frontend origin', async () => {

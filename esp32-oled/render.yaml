@@ -6,7 +6,9 @@
 #
 # esp32-oled-api: the Node backend with Mosquitto inside the same container.
 #   Phones use HTTPS + /api/live; devices use wss://<host>/mqtt.
-# esp32-oled-web: the Vite + React frontend as a static site.
+# esp32-oled-web: the Vite + React frontend as a static site. It does not
+#   deploy on push: .github/workflows/esp32-oled-deploy.yml waits for the
+#   backend to be live on the pushed commit, then calls its Deploy Hook.
 # Each service is told the other's public address. (fromService's `host`
 # is the private-network name, e.g. `esp32-oled-web`, which browsers and
 # phones cannot use, so the addresses are written out here.)
@@ -61,10 +63,7 @@ services:
     # Run from the repo root; buildFilter limits rebuilds to frontend changes.
     buildCommand: cd esp32-oled/frontend && npm ci && npm run build
     staticPublishPath: ./esp32-oled/frontend/dist
-    buildFilter:
-      paths:
-        - esp32-oled/frontend/**
-    autoDeployTrigger: commit
+    autoDeployTrigger: off  # deployed by the GitHub workflow, after the backend
     # React Router handles /pair/<code> and the rest in the browser.
     routes:
       - type: rewrite
