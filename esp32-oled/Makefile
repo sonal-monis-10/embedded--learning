@@ -6,14 +6,14 @@
 #  FIRMWARE_TARGETS is passed straight to it, so `make oled` works from here
 #  as well as from inside firmware/.
 #
-#      make oled       flash the OLED demo (SH1106) AND open the monitor
+#      make oled       flash the app (SH1106) AND open the monitor
 #      make check      compile every firmware environment
 #      make help       list every firmware target
 #
 #  IMPORTANT: the indented lines below MUST use real TAB characters.
 # =============================================================================
 
-FIRMWARE_TARGETS := help oled oled-ssd1306 scanner monitor \
+FIRMWARE_TARGETS := help oled oled-ssd1306 demo scanner monitor erase \
                     build build-ssd1306 build-scanner check \
                     upload upload-ssd1306 upload-scanner \
                     clean clean-all ports

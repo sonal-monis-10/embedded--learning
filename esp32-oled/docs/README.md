@@ -3,7 +3,7 @@
 | File | What it covers |
 |------|----------------|
 | [architecture.html](architecture.html) | **Architecture diagram** (open in a browser): phone, frontend, Express + Mosquitto on Render, MongoDB, ESP32 / Wokwi, later-phase LRCLIB and Claude |
-| [how-main-works.md](how-main-works.md) | Walk-through of `firmware/src/main.cpp`: build flags, `setup()`, `loop()`, drawing calls, where to make changes |
+| [how-main-works.md](how-main-works.md) | Walk-through of `firmware/tools/oled_demo.cpp`: build flags, `setup()`, `loop()`, drawing calls, where to make changes |
 | [plan/](plan/README.md) | **Draft plan**: architecture, security, API, and 4 phases (foundation, robot eyes, music, AI animations) |
 | [display-ram.md](display-ram.md) | The framebuffer and the OLED's GDDRAM: page layout, the pixel formula, the I2C bytes, raw buffer access, raw commands |
 
@@ -63,7 +63,7 @@ The exact library source used by your build is on disk, under
 
 ## Suggested path
 
-1. Read [how-main-works.md](how-main-works.md) with `firmware/src/main.cpp` open beside it.
+1. Read [how-main-works.md](how-main-works.md) with `firmware/tools/oled_demo.cpp` open beside it.
 2. SparkFun I2C + the bitwise operations page.
 3. [display-ram.md](display-ram.md). Then try the `rawDemo()` example in §5.
 4. SH1106 datasheet: the GDDRAM section and the command table. Check each

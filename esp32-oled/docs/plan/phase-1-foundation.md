@@ -23,9 +23,9 @@ especially §4.2 (device lifecycle) and §4.4 (pairing).
 | 1 | Plan updated to the self-registering, one-phone-per-device model | **Done** |
 | 2 | Backend rework: provisioning, single controller, release, `/api/live` | **Done** (67 tests) |
 | 3 | Mosquitto inside the backend container | **Done**: image builds, broker starts, a device provisions, connects through `/mqtt`, gets its pairing code; wrong secrets refused. Footprint: ~100 MiB memory, 329 MB image. Automated broker tests run with `make test-docker` |
-| 4 | Firmware on the **real board** (local backend over the LAN, `DEV_INSECURE=1`) | Next |
-| E1 | Deploy the **backend** on Render | After step 4 |
-| 5 | Frontend rebuild for the new flow, with the review fixes; then deploy it on Render | After E1 |
+| E1 | Deploy on Render from `esp32-oled/render.yaml`: backend (Docker, Mosquitto inside) and the frontend static site, each given the other's host | **Done**: `/healthz` shows db up, broker ready |
+| 4 | Firmware on the **real board**, against the Render backend | **Written**, all envs compile (`make check`); flash with `make oled` |
+| 5 | Frontend rebuild for the new flow, with the review fixes (auto-deploys on push) | After step 4 |
 | W | Wokwi simulation (needs the deployed backend: Wokwi's free gateway cannot reach a laptop) | Last |
 
 ---
@@ -212,8 +212,13 @@ compiler command lines and logs. The simulator env forces Wokwi-GUEST.
 |-----|---------|----------|
 | `hw_sh1106` (default) | SH1106 | your 1.3" module |
 | `hw_ssd1306` | SSD1306 | 0.96" modules |
-| `sim_ssd1306` | SSD1306 | Wokwi (no SH1106 part) |
+| `sim_ssd1306` | SSD1306 | Wokwi (no SH1106 part), step W |
+| `demo_sh1106`, `demo_ssd1306` | both | the original Hello demo, `tools/oled_demo.cpp` |
 | `scanner` | — | I2C scanner, unchanged |
+
+Built so far with the local PlatformIO (`make oled`); the Docker build
+below follows with step W. Hold **BOOT** while powering on for 3 s, or
+run `make erase`, to make a board forget its login and register again.
 
 ### 4.2 Docker build (`firmware/Dockerfile`)
 

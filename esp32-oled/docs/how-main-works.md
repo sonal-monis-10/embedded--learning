@@ -1,4 +1,4 @@
-# How `firmware/src/main.cpp` works
+# How `firmware/tools/oled_demo.cpp` works
 
 A walk through the OLED demo, from power-on to pixels on the glass.
 For the memory layout behind it, see [display-ram.md](display-ram.md).
@@ -50,14 +50,14 @@ second. The panel always shows whatever is in GDDRAM, so if you forget
 `USE_SH1106` is not defined in the code. It comes from `firmware/platformio.ini`:
 
 ```ini
-[env:oled_sh1106]
+[env:demo_sh1106]
 build_flags = ${env.build_flags} -DUSE_SH1106
 ```
 
 `-DUSE_SH1106` is the compiler flag for `#define USE_SH1106`. So:
 
-- `pio run` (default env `oled_sh1106`) → SH1106 code is compiled (your module).
-- `pio run -e oled` → SSD1306 code is compiled.
+- `pio run -e demo_sh1106` → SH1106 code is compiled (your module).
+- `pio run -e demo_ssd1306` → SSD1306 code is compiled.
 
 The preprocessor removes the unused branch before the compiler sees it, so
 the wrong library is never even linked.
