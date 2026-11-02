@@ -4,8 +4,10 @@
 # root (Embedded/), as Render resolves them.
 #
 # esp32-oled-api: the Node backend with Mosquitto inside the same container.
-# Phones use HTTPS + /api/live; devices use wss://<host>/mqtt.
-# The frontend static site is added here in step 5.
+#   Phones use HTTPS + /api/live; devices use wss://<host>/mqtt.
+# esp32-oled-web: the Vite + React frontend as a static site.
+# Each service gets the other's host from Render (fromService), so neither
+# address is typed in by hand.
 
 services:
   - type: web
@@ -29,10 +31,12 @@ services:
         value: "10"
       - key: MAX_DEVICES
         value: "20"
-      # The frontend's address (pairing QR links point here). Update it
-      # once the static site exists in step 5.
+      # The frontend's host: CORS, and where pairing QR links point.
       - key: CORS_ORIGIN
-        value: https://esp32-oled-web.onrender.com
+        fromService:
+          type: web
+          name: esp32-oled-web
+          property: host
 
       # Asked for once, when the Blueprint is created.
       - key: MONGODB_URI
@@ -51,3 +55,28 @@ services:
         generateValue: true
       - key: MQTT_BACKEND_PASSWORD
         generateValue: true
+
+  - type: web
+    name: esp32-oled-web
+    runtime: static
+    # Run from the repo root; buildFilter limits rebuilds to frontend changes.
+    buildCommand: cd esp32-oled/frontend && npm ci && npm run build
+    staticPublishPath: ./esp32-oled/frontend/dist
+    buildFilter:
+      paths:
+        - esp32-oled/frontend/**
+    autoDeployTrigger: commit
+    # React Router handles /pair/<code> and the rest in the browser.
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      # Baked into the bundle at build time (public, never a secret).
+      - key: VITE_API_URL
+        fromService:
+          type: web
+          name: esp32-oled-api
+          property: host

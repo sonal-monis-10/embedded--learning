@@ -1,7 +1,9 @@
 import { clearSession, loadSession } from './session.js';
 
-// Base URL of the backend, baked in at build time from VITE_API_URL.
-export const API_URL = (import.meta.env.VITE_API_URL ?? 'http://localhost:8080').replace(/\/$/, '');
+// Base URL of the backend, baked in at build time from VITE_API_URL. Render
+// passes it as a bare host (x.onrender.com), so https:// is added if missing.
+const configured = (import.meta.env.VITE_API_URL || 'http://localhost:8080').replace(/\/$/, '');
+export const API_URL = /^https?:\/\//.test(configured) ? configured : `https://${configured}`;
 
 // Render's free tier sleeps; the first request after a while can take a
 // minute. Callers get `onSlow` after this long so they can say so.

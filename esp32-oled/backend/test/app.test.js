@@ -60,6 +60,12 @@ describe('loadConfig', () => {
     assert.equal(config.mqtt.wsPort, 9001);
   });
 
+  it('accepts the frontend as a bare host, as Render passes it', () => {
+    const config = loadConfig({ ...valid, CORS_ORIGIN: 'oled-web.onrender.com' });
+    assert.equal(config.frontendUrl, 'https://oled-web.onrender.com');
+    assert.equal(loadConfig(valid).frontendUrl, 'http://localhost:5173');
+  });
+
   it('works out the public broker address on Render', () => {
     assert.equal(loadConfig(valid).publicMqttUrl, 'ws://localhost:8080/mqtt');
     const onRender = loadConfig({ ...valid, RENDER_EXTERNAL_URL: 'https://oled.onrender.com' });

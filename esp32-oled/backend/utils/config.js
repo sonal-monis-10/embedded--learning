@@ -9,8 +9,8 @@ const schema = z
       .default('info'),
 
     // The frontend's address. Browsers may call the API only from here, and
-    // pairing QR links point here.
-    CORS_ORIGIN: z.url().default('http://localhost:5173'),
+    // pairing QR links point here. On Render it arrives as a bare host.
+    CORS_ORIGIN: z.preprocess(withHttps, z.url().default('http://localhost:5173')),
 
     MONGODB_URI: z
       .string({ error: 'is required' })
@@ -99,6 +99,12 @@ export function loadConfig(env) {
       backendPassword: vars.MQTT_BACKEND_PASSWORD,
     },
   };
+}
+
+// x.onrender.com -> https://x.onrender.com; full URLs pass through.
+function withHttps(value) {
+  if (typeof value !== 'string' || value === '' || /^https?:\/\//.test(value)) return value;
+  return `https://${value}`;
 }
 
 // https://x.onrender.com -> wss://x.onrender.com/mqtt (same host, same port).
