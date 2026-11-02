@@ -7,8 +7,9 @@
 # esp32-oled-api: the Node backend with Mosquitto inside the same container.
 #   Phones use HTTPS + /api/live; devices use wss://<host>/mqtt.
 # esp32-oled-web: the Vite + React frontend as a static site.
-# Each service gets the other's host from Render (fromService), so neither
-# address is typed in by hand.
+# Each service is told the other's public address. (fromService's `host`
+# is the private-network name, e.g. `esp32-oled-web`, which browsers and
+# phones cannot use, so the addresses are written out here.)
 
 services:
   - type: web
@@ -34,10 +35,7 @@ services:
         value: "20"
       # The frontend's host: CORS, and where pairing QR links point.
       - key: CORS_ORIGIN
-        fromService:
-          type: web
-          name: esp32-oled-web
-          property: host
+        value: https://esp32-oled-web.onrender.com
 
       # Asked for once, when the Blueprint is created.
       - key: MONGODB_URI
@@ -77,7 +75,4 @@ services:
         value: "24"
       # Baked into the bundle at build time (public, never a secret).
       - key: VITE_API_URL
-        fromService:
-          type: web
-          name: esp32-oled-api
-          property: host
+        value: https://esp32-oled-api.onrender.com
