@@ -60,6 +60,18 @@ describe('loadConfig', () => {
     assert.equal(config.mqtt.wsPort, 9001);
   });
 
+  it('works out the public broker address on Render', () => {
+    assert.equal(loadConfig(valid).publicMqttUrl, 'ws://localhost:8080/mqtt');
+    const onRender = loadConfig({ ...valid, RENDER_EXTERNAL_URL: 'https://oled.onrender.com' });
+    assert.equal(onRender.publicMqttUrl, 'wss://oled.onrender.com/mqtt');
+    const pinned = {
+      ...valid,
+      RENDER_EXTERNAL_URL: 'https://a.example',
+      PUBLIC_MQTT_URL: 'wss://b.example/mqtt',
+    };
+    assert.equal(loadConfig(pinned).publicMqttUrl, 'wss://b.example/mqtt');
+  });
+
   it('needs the broker passwords only while MQTT is enabled', () => {
     const { MQTT_ADMIN_PASSWORD, MQTT_BACKEND_PASSWORD, ...withoutBroker } = valid;
     assert.throws(() => loadConfig(withoutBroker), /MQTT_ADMIN_PASSWORD: is required/);

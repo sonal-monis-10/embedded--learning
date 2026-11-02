@@ -56,7 +56,16 @@ async function syncLogins(dynsec) {
   await dynsec.createClient('backend', config.mqtt.backendPassword, 'backend');
   const devices = await Device.find().select('+secret');
   for (const device of devices) {
-    await dynsec.createClient(device._id, unseal(device.secret), 'device');
+    let secret;
+    try {
+      secret = unseal(device.secret);
+    } catch {
+      // Sealed under another SECRETS_KEY. Skip it rather than keep every
+      // other device offline; deleting it lets the board register again.
+      logger.warn({ deviceId: device._id }, 'device secret unreadable, skipping its login');
+      continue;
+    }
+    await dynsec.createClient(device._id, secret, 'device');
   }
   logger.info({ devices: devices.length }, 'broker logins synced');
 }

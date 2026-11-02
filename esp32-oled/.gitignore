@@ -3,7 +3,7 @@
 # Secrets: device env files from the dashboard and every .env* file,
 # including .env.example (none of them are ever committed). The variable
 # names are documented in docs/plan/README.md §8 and validated in
-# backend/src/config.js. Every firmware binary in out/ contains its device
+# backend/utils/config.js. Every firmware binary in out/ contains its device
 # secret too.
 devices/*.env
 .env
@@ -22,8 +22,11 @@ coverage/
 *~
 .DS_Store
 
-# Agent skills installed locally (graphify, impeccable, diagram-design,
-# readme-wizard) and graphify's generated code graph. Not committed.
-.claude/skills/
-.claude/agents/
+# Local agent tooling (graphify, impeccable, diagram-design, readme-wizard):
+# skills, hooks, settings, their instructions and generated files.
+# Not committed.
+.claude/
+CLAUDE.md
+.graphifyignore
+.impeccable/
 graphify-out/

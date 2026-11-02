@@ -34,11 +34,13 @@ const schema = z
       .string({ error: 'is required' })
       .refine((value) => Buffer.from(value, 'base64').length === 32, 'must be 32 bytes, base64'),
 
-    // Written into each device's .env file; the firmware connects here.
+    // Handed to each device when it registers; the firmware connects here.
+    // Unset on Render, it is worked out from RENDER_EXTERNAL_URL.
     PUBLIC_MQTT_URL: z
       .string()
       .regex(/^wss?:\/\//, 'must start with ws:// or wss://')
-      .default('ws://localhost:8080/mqtt'),
+      .optional(),
+    RENDER_EXTERNAL_URL: z.url().optional(),
 
     CLEANUP_TZ: z
       .string()
@@ -84,7 +86,7 @@ export function loadConfig(env) {
     adminKey: vars.ADMIN_KEY,
     idleReleaseMs: vars.IDLE_RELEASE_MIN * 60_000,
     secretsKey: Buffer.from(vars.SECRETS_KEY, 'base64'),
-    publicMqttUrl: vars.PUBLIC_MQTT_URL,
+    publicMqttUrl: vars.PUBLIC_MQTT_URL ?? mqttUrlFor(vars.RENDER_EXTERNAL_URL),
     cleanupTimeZone: vars.CLEANUP_TZ,
     mqtt: {
       enabled: vars.MQTT_ENABLED === 'true',
@@ -97,6 +99,14 @@ export function loadConfig(env) {
       backendPassword: vars.MQTT_BACKEND_PASSWORD,
     },
   };
+}
+
+// https://x.onrender.com -> wss://x.onrender.com/mqtt (same host, same port).
+function mqttUrlFor(publicUrl) {
+  if (!publicUrl) return 'ws://localhost:8080/mqtt';
+  const url = new URL('/mqtt', publicUrl);
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+  return url.href;
 }
 
 function isTimeZone(name) {
