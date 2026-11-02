@@ -1,7 +1,8 @@
 # Render Blueprint: https://render.com/docs/blueprint-spec
 # Lives in esp32-oled/, so set "Blueprint Path" to esp32-oled/render.yaml
-# when creating the Blueprint. Paths below are still relative to the repo
-# root (Embedded/), as Render resolves them.
+# when creating the Blueprint. Paths are relative to the repo root
+# (Embedded/), except a Docker service's dockerfilePath and dockerContext,
+# which Render resolves inside its rootDir.
 #
 # esp32-oled-api: the Node backend with Mosquitto inside the same container.
 #   Phones use HTTPS + /api/live; devices use wss://<host>/mqtt.
@@ -16,8 +17,8 @@ services:
     plan: free
     region: singapore
     rootDir: esp32-oled/backend
-    dockerfilePath: ./esp32-oled/backend/Dockerfile
-    dockerContext: ./esp32-oled/backend
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
     healthCheckPath: /healthz
     autoDeployTrigger: commit
     envVars:
