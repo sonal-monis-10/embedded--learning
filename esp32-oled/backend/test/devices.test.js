@@ -58,6 +58,7 @@ describe('controlling the device', () => {
       topic: `d/${deviceId}/mode`,
       payload: { mode: 'eyes' },
       retain: true,
+      qos: 1,
     });
   });
 

@@ -14,7 +14,6 @@ import { attach, detach } from './hub.js';
 //                   {"t":"released","reason":"idle"}    when the turn ends
 // The token travels in a message, not the URL, so it never lands in logs.
 
-const PATH = '/api/live';
 const AUTH_TIMEOUT_MS = 5000;
 const PING_EVERY_MS = 25_000; // keeps Render's proxy and the free instance awake
 const MAX_READINGS_PER_SECOND = 30;
@@ -33,22 +32,23 @@ const imuMessage = z.object({
   ]),
 });
 
-export function attachLiveServer(httpServer) {
+// Returns { handleUpgrade, close }; server.js routes /api/live upgrades here.
+export function createLiveServer() {
   const wss = new WebSocketServer({ noServer: true, maxPayload: 1024 });
-
-  httpServer.on('upgrade', (req, socket, head) => {
-    if (new URL(req.url, 'http://localhost').pathname !== PATH) return;
-    wss.handleUpgrade(req, socket, head, (ws) => handleConnection(ws));
-  });
 
   const pinger = setInterval(() => {
     for (const ws of wss.clients) ws.ping();
   }, PING_EVERY_MS).unref();
 
-  return () => {
-    clearInterval(pinger);
-    for (const ws of wss.clients) ws.close(1001, 'server shutting down');
-    wss.close();
+  return {
+    handleUpgrade(req, socket, head) {
+      wss.handleUpgrade(req, socket, head, handleConnection);
+    },
+    close() {
+      clearInterval(pinger);
+      for (const ws of wss.clients) ws.close(1001, 'server shutting down');
+      wss.close();
+    },
   };
 }
 

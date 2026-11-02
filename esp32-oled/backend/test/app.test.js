@@ -43,6 +43,8 @@ describe('loadConfig', () => {
     ADMIN_KEY: 'a'.repeat(24),
     PROVISION_KEY: 'p'.repeat(24),
     SECRETS_KEY: crypto.randomBytes(32).toString('base64'),
+    MQTT_ADMIN_PASSWORD: 'm'.repeat(16),
+    MQTT_BACKEND_PASSWORD: 'b'.repeat(16),
   };
 
   it('fills in defaults', () => {
@@ -54,6 +56,14 @@ describe('loadConfig', () => {
     assert.equal(config.secretsKey.length, 32);
     assert.equal(config.maxDevices, 20);
     assert.equal(config.idleReleaseMs, 10 * 60_000);
+    assert.equal(config.mqtt.enabled, true);
+    assert.equal(config.mqtt.wsPort, 9001);
+  });
+
+  it('needs the broker passwords only while MQTT is enabled', () => {
+    const { MQTT_ADMIN_PASSWORD, MQTT_BACKEND_PASSWORD, ...withoutBroker } = valid;
+    assert.throws(() => loadConfig(withoutBroker), /MQTT_ADMIN_PASSWORD: is required/);
+    assert.equal(loadConfig({ ...withoutBroker, MQTT_ENABLED: 'false' }).mqtt.enabled, false);
   });
 
   it('names every missing variable', () => {

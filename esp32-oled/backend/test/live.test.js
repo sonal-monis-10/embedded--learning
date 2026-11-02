@@ -3,13 +3,13 @@ import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import WebSocket from 'ws';
 import { recordedMessages } from '../mqtt/publisher.js';
-import { startApp, startLive } from './support/app.js';
+import { startApp, startServer } from './support/app.js';
 
 let t;
 let live;
 before(async () => {
   t = await startApp();
-  live = await startLive(t.app);
+  live = await startServer(t.app);
 });
 after(async () => {
   await live.stop();
@@ -18,7 +18,7 @@ after(async () => {
 
 // Opens /api/live and collects what the server sends.
 async function connect() {
-  const ws = new WebSocket(live.url);
+  const ws = new WebSocket(live.liveUrl);
   const received = [];
   ws.on('message', (data) => received.push(JSON.parse(data.toString())));
   await once(ws, 'open');

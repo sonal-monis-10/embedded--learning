@@ -13,7 +13,7 @@ export default [
     },
     rules: {
       // `_next`, `_req`: unused on purpose (Express decides by position).
-      'no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+      'no-unused-vars': ['error', { argsIgnorePattern: '^_', ignoreRestSiblings: true }],
     },
   },
   // Last: turns off rules that would fight with Prettier's formatting.

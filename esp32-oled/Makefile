@@ -18,7 +18,7 @@ FIRMWARE_TARGETS := help oled oled-ssd1306 scanner monitor \
                     upload upload-ssd1306 upload-scanner \
                     clean clean-all ports
 
-.PHONY: $(FIRMWARE_TARGETS) install lint test dev-backend dev-frontend
+.PHONY: $(FIRMWARE_TARGETS) install lint test test-docker dev-backend dev-frontend
 
 # -C firmware: run make inside firmware/, where platformio.ini lives.
 $(FIRMWARE_TARGETS):
@@ -42,7 +42,19 @@ test:
 	cd backend && npm test
 	cd frontend && npm run build
 
-# Each in its own terminal. Backend: http://localhost:8080, frontend: :5173
+# The full backend suite, broker tests included, inside the backend image
+# (which has Mosquitto), next to a throwaway MongoDB container.
+test-docker:
+	docker build --target test -t esp32-oled-backend-test backend
+	docker network create oled-test >/dev/null 2>&1 || true
+	docker run -d --rm --name oled-test-mongo --network oled-test mongo:latest >/dev/null
+	docker run --rm --network oled-test \
+	  -e TEST_MONGODB_URI=mongodb://oled-test-mongo:27017 \
+	  esp32-oled-backend-test; status=$$?; \
+	  docker stop oled-test-mongo >/dev/null; exit $$status
+
+# Each in its own terminal. Backend: http://localhost:8080, frontend: :5173.
+# Without Mosquitto installed, set MQTT_ENABLED=false in backend/.env.
 dev-backend:
 	cd backend && npm run dev
 

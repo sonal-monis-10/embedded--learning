@@ -3,7 +3,8 @@ import mongoose from 'mongoose';
 import request from 'supertest';
 import { createApp, closeDatabase } from '../../app.js';
 import { Device } from '../../entity/device.js';
-import { attachLiveServer } from '../../live/server.js';
+import { createLiveServer } from '../../live/server.js';
+import { proxyMqttUpgrade } from '../../mqtt/proxy.js';
 import { offerPairing } from '../../utils/pairingIssuer.js';
 import { TEST_ADMIN_KEY, TEST_PROVISION_KEY } from './constants.js';
 
@@ -64,16 +65,24 @@ export async function startApp() {
   };
 }
 
-// A real HTTP server with /api/live attached, for WebSocket tests.
-export async function startLive(app) {
+// A real HTTP server routing upgrades the way server.js does, for
+// WebSocket and broker tests.
+export async function startServer(app) {
+  const live = createLiveServer();
   const server = http.createServer(app);
-  const stopLive = attachLiveServer(server);
+  server.on('upgrade', (req, socket, head) => {
+    const { pathname } = new URL(req.url, 'http://localhost');
+    if (pathname === '/api/live') return live.handleUpgrade(req, socket, head);
+    if (pathname === '/mqtt') return proxyMqttUpgrade(req, socket, head);
+    socket.destroy();
+  });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
-  const url = `ws://127.0.0.1:${server.address().port}/api/live`;
+  const base = `127.0.0.1:${server.address().port}`;
   return {
-    url,
+    liveUrl: `ws://${base}/api/live`,
+    mqttUrl: `ws://${base}/mqtt`,
     stop: async () => {
-      stopLive();
+      live.close();
       await new Promise((resolve) => server.close(resolve));
     },
   };

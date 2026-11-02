@@ -4,6 +4,7 @@ import { Device } from '../entity/device.js';
 import { DeviceEvent } from '../entity/deviceEvent.js';
 import { PairingCode } from '../entity/pairingCode.js';
 import { requireAdmin, requireProvisionKey } from '../middleware/auth.js';
+import { createDeviceLogin, deleteDeviceLogin } from '../mqtt/logins.js';
 import { HttpError, notFound } from '../middleware/errors.js';
 import { adminKeyLimiter, provisionLimiter } from '../middleware/rateLimit.js';
 import { validate } from '../middleware/validate.js';
@@ -57,7 +58,12 @@ async function provision(req, res) {
     throw new HttpError(409, 'device_limit', 'No more devices can be registered');
   }
   const { device, secret } = await Device.register(req.body);
-  // TODO(mqtt): create the device's MQTT login; undo the registration if that fails.
+  try {
+    await createDeviceLogin(device._id, secret);
+  } catch (err) {
+    await device.deleteOne(); // no half-registered devices
+    throw err;
+  }
   await DeviceEvent.record(device._id, 'provisioned', { kind: device.kind, fw: device.fw });
 
   res.status(201).json({ deviceId: device._id, secret, brokerUrl: config.publicMqttUrl });
@@ -79,7 +85,7 @@ async function getDevice(req, res) {
 // rejects its old login.
 async function deleteDevice(req, res) {
   const device = await findDevice(req.params.id);
-  // TODO(mqtt): delete the device's MQTT login, which also disconnects it.
+  await deleteDeviceLogin(device._id); // also disconnects it
   await Promise.all([
     device.deleteOne(),
     PairingCode.deleteMany({ device: device._id }),

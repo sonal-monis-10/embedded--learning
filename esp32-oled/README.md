@@ -45,6 +45,8 @@ ADMIN_KEY=<at least 24 random characters>
 SECRETS_KEY=<32 random bytes, base64>   # node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 ```
 
+Without Mosquitto on your laptop, add `MQTT_ENABLED=false` to run the API alone; the Docker image (`backend/Dockerfile`) runs the broker. With it enabled, also set `MQTT_ADMIN_PASSWORD` and `MQTT_BACKEND_PASSWORD` (16+ characters).
+
 Back up `SECRETS_KEY`: it encrypts the device secrets, and losing it means re-registering every device.
 
 Run the backend and frontend in two terminals:
@@ -67,7 +69,8 @@ make scanner     # I2C scanner, if the screen stays blank
 Before committing, run the checks:
 
 ```bash
-make test        # backend tests (in-memory MongoDB) + frontend build
+make test        # backend tests (in-memory MongoDB) + frontend build; broker tests skip without Mosquitto
+make test-docker # the same inside the backend image, broker tests included (needs Docker)
 make lint        # ESLint + Prettier for both
 make check       # compile every firmware environment
 ```
@@ -80,7 +83,7 @@ esp32-oled/
 │   ├── entity/       Mongoose schemas: device, user, session, pairingCode, deviceEvent, meta
 │   ├── live/         /api/live WebSocket: tilt in, status and "turn ended" out
 │   ├── middleware/   auth (provision/admin keys, sessions, controller), errors, rate limits, validation
-│   ├── mqtt/         messages to devices (a stand-in until Mosquitto is added)
+│   ├── mqtt/         Mosquitto: supervisor, logins (Dynamic Security), presence, /mqtt pipe
 │   ├── routes/       admin (provisioning, maintenance), pairing, devices, health
 │   ├── test/         node:test suites, shared in-memory MongoDB
 │   ├── utils/        config, secrets (AES-GCM), turns (release, idle), pairing issuer, cleanup

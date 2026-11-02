@@ -1,13 +1,13 @@
 // Everything the backend sends to devices, one function per topic
-// (docs/plan/README.md §6). Step 3 plugs in the real Mosquitto client with
-// usePublisher(); until then messages go to a stand-in that only records
-// them, which is also what the tests read.
+// (docs/plan/README.md §6). broker.js plugs in the real Mosquitto client
+// with usePublisher(); without a broker (MQTT_ENABLED=false, tests) messages
+// go to a stand-in that only records them.
 
 const recorded = [];
 
 const standIn = {
-  publish(topic, payload, { retain = false } = {}) {
-    recorded.push({ topic, payload, retain });
+  publish(topic, payload, { retain = false, qos = 1 } = {}) {
+    recorded.push({ topic, payload, retain, qos });
   },
 };
 
@@ -32,7 +32,8 @@ export function publishMode(deviceId, mode) {
 }
 
 export function publishImu(deviceId, reading) {
-  transport.publish(`d/${deviceId}/imu`, reading);
+  // QoS 0: a lost reading is replaced by the next one 50 ms later.
+  transport.publish(`d/${deviceId}/imu`, reading, { qos: 0 });
 }
 
 export function publishCommand(deviceId, command) {

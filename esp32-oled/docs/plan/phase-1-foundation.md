@@ -18,14 +18,15 @@ especially §4.2 (device lifecycle) and §4.4 (pairing).
 | # | Step | Status |
 |---|------|--------|
 | A | Repo split into `firmware/`, `backend/`, `frontend/`; backend and frontend scaffolds | **Done** |
-| C0 | Backend: MongoDB, entities, sessions, pairing codes, nightly cleanup (first model, with members and an admin-issued QR) | **Done**, being reworked in step 2 |
-| D0 | Frontend first pass: pair, home, device pages in the warm consumer world | **Done**; finish review said **rebuild** (see §D) |
-| 1 | Plan updated to the self-registering, one-phone-per-device model | **Done** (this document) |
-| 2 | Backend rework: provisioning, single controller, release, `/api/live` | **Done** (67 tests; MQTT publishing goes to a stand-in until step 3) |
-| 3 | Mosquitto inside the backend container | Next |
-| 4 | Firmware: provisioning, MQTT, pairing screen, eyes | |
-| 5 | Frontend rebuild for the new flow, with the review fixes | |
-| E | Deploy on Render | Last |
+| C0 | Backend: MongoDB, entities, sessions, pairing codes, nightly cleanup (first model) | **Done**, reworked in step 2 |
+| D0 | Frontend first pass: pair, home, device pages in the warm consumer world | **Done**; finish review said **rebuild** (step 5) |
+| 1 | Plan updated to the self-registering, one-phone-per-device model | **Done** |
+| 2 | Backend rework: provisioning, single controller, release, `/api/live` | **Done** (67 tests) |
+| 3 | Mosquitto inside the backend container | **Done**: image builds, broker starts, a device provisions, connects through `/mqtt`, gets its pairing code; wrong secrets refused. Footprint: ~100 MiB memory, 329 MB image. Automated broker tests run with `make test-docker` |
+| 4 | Firmware on the **real board** (local backend over the LAN, `DEV_INSECURE=1`) | Next |
+| E1 | Deploy the **backend** on Render | After step 4 |
+| 5 | Frontend rebuild for the new flow, with the review fixes; then deploy it on Render | After E1 |
+| W | Wokwi simulation (needs the deployed backend: Wokwi's free gateway cannot reach a laptop) | Last |
 
 ---
 
