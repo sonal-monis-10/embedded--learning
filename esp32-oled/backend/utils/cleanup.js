@@ -7,6 +7,7 @@ import { User } from '../entity/user.js';
 import { endAllTurns } from '../live/hub.js';
 import { config } from './config.js';
 import { logger } from './logger.js';
+import { clearAllMusic } from './music.js';
 import { sweepPairing } from './pairingIssuer.js';
 import { dateIn } from './time.js';
 
@@ -16,6 +17,7 @@ const CHECK_INTERVAL_MS = 60_000;
 // keep connecting and everyone simply pairs again.
 export async function runCleanup(reason) {
   endAllTurns('midnight');
+  await clearAllMusic();
   const [users, sessions, codes, events, devices] = await Promise.all([
     User.deleteMany({}),
     Session.deleteMany({}),

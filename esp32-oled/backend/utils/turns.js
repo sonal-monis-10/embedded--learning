@@ -3,6 +3,7 @@ import { DeviceEvent } from '../entity/deviceEvent.js';
 import { endTurn } from '../live/hub.js';
 import { config } from './config.js';
 import { logger } from './logger.js';
+import { clearMusic } from './music.js';
 import { offerPairing } from './pairingIssuer.js';
 
 // A turn is one phone controlling one device. It ends when the visitor
@@ -23,6 +24,8 @@ export async function release(deviceId, reason) {
 
   await DeviceEvent.record(deviceId, 'released', { reason });
   endTurn(deviceId, reason);
+  // The next visitor starts without the last one's song.
+  if (before.music) await clearMusic(deviceId);
   await offerPairing(deviceId);
   return true;
 }

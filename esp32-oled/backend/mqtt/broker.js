@@ -30,8 +30,10 @@ export async function startBroker() {
   const backend = await connect('backend', config.mqtt.backendPassword);
   usePublisher({
     publish(topic, payload, { retain = false, qos = 1 } = {}) {
-      // An empty retained message clears what the device shows.
-      const body = payload === null ? '' : JSON.stringify(payload);
+      // An empty retained message clears what the device shows. Strings go
+      // as they are (the lyrics are plain text); everything else as JSON.
+      const body =
+        payload === null ? '' : typeof payload === 'string' ? payload : JSON.stringify(payload);
       backend.publish(topic, body, { retain, qos });
     },
   });

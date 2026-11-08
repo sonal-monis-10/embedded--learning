@@ -9,7 +9,7 @@ const DUPLICATE_KEY = 11000;
 
 // What the nightly cleanup resets. Everything else on a device survives,
 // so a flashed board keeps connecting after midnight.
-export const NIGHTLY_RESET = { name: null, controller: null, mode: 'idle' };
+export const NIGHTLY_RESET = { name: null, controller: null, mode: 'idle', music: null };
 
 const sealedSchema = new Schema(
   {
@@ -27,6 +27,20 @@ const controllerSchema = new Schema(
     since: { type: Date, default: Date.now },
     // Bumped by tilt and mode changes; the idle timer reads it.
     lastActiveAt: { type: Date, default: Date.now },
+  },
+  { _id: false },
+);
+
+// The song on the device and its clock: at `updatedAt` the song was at
+// `positionMs`, and it has moved on since if `playing`. The backend owns
+// this clock, so it keeps running when the phone locks.
+const musicSchema = new Schema(
+  {
+    song: { type: Number, ref: 'Song', required: true },
+    lyrics: { type: Boolean, default: true }, // karaoke screen, or disc + progress
+    positionMs: { type: Number, default: 0 },
+    playing: { type: Boolean, default: false },
+    updatedAt: { type: Date, default: Date.now },
   },
   { _id: false },
 );
@@ -51,6 +65,7 @@ const deviceSchema = new Schema(
     name: { type: String, trim: true, maxlength: 40, default: null },
     controller: { type: controllerSchema, default: null },
     mode: { type: String, enum: ['idle', 'eyes', 'music'], default: 'idle' },
+    music: { type: musicSchema, default: null },
   },
   { timestamps: true, versionKey: false },
 );

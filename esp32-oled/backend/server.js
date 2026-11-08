@@ -2,6 +2,7 @@ import http from 'node:http';
 import { config } from './utils/config.js';
 import { logger } from './utils/logger.js';
 import { scheduleNightlyCleanup } from './utils/cleanup.js';
+import { scheduleMusicSync } from './utils/music.js';
 import { schedulePairingSweep } from './utils/pairingIssuer.js';
 import { scheduleIdleRelease } from './utils/turns.js';
 import { createLiveServer } from './live/server.js';
@@ -41,7 +42,12 @@ server.on('upgrade', (req, socket, head) => {
 });
 server.listen(config.port, () => logger.info({ port: config.port }, 'backend listening'));
 
-const stopTimers = [scheduleNightlyCleanup(), scheduleIdleRelease(), schedulePairingSweep()];
+const stopTimers = [
+  scheduleNightlyCleanup(),
+  scheduleIdleRelease(),
+  schedulePairingSweep(),
+  scheduleMusicSync(),
+];
 
 // Render sends SIGTERM before replacing the instance on a deploy: close the
 // phone sockets, finish in-flight requests, stop Mosquitto, close MongoDB.

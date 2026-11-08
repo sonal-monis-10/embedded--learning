@@ -9,6 +9,13 @@ export const pairingLimiter = perMinute({ limit: 10 });
 // how fast anyone holding it can add devices.
 export const provisionLimiter = perMinute({ limit: 5 });
 
+// Song searches go to LRCLIB, a free service: 20 a minute per phone.
+// Runs after requireSession, so req.user is set.
+export const musicSearchLimiter = perMinute({
+  limit: 20,
+  keyGenerator: (req) => `user:${req.user._id}`,
+});
+
 // Only wrong keys count, so normal admin use is never slowed down.
 export const adminKeyLimiter = perMinute({
   limit: 5,

@@ -42,6 +42,9 @@ const schema = z
       .optional(),
     RENDER_EXTERNAL_URL: z.url().optional(),
 
+    // Song search and timed lyrics for music mode.
+    LRCLIB_URL: z.url().default('https://lrclib.net'),
+
     CLEANUP_TZ: z
       .string()
       .refine(isTimeZone, 'must be an IANA time zone such as Asia/Kolkata')
@@ -88,6 +91,7 @@ export function loadConfig(env) {
     secretsKey: Buffer.from(vars.SECRETS_KEY, 'base64'),
     publicMqttUrl: vars.PUBLIC_MQTT_URL ?? mqttUrlFor(vars.RENDER_EXTERNAL_URL),
     cleanupTimeZone: vars.CLEANUP_TZ,
+    lrclibUrl: vars.LRCLIB_URL.replace(/\/$/, ''),
     mqtt: {
       enabled: vars.MQTT_ENABLED === 'true',
       bin: vars.MOSQUITTO_BIN,

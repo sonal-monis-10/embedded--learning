@@ -10,6 +10,7 @@ import healthRoutes from './routes/health.js';
 import adminRoutes from './routes/admin.js';
 import pairingRoutes from './routes/pairing.js';
 import deviceRoutes from './routes/devices.js';
+import musicRoutes from './routes/music.js';
 
 // Connects to MongoDB and returns the Express app, ready to listen.
 export async function createApp() {
@@ -30,6 +31,7 @@ export async function createApp() {
   // Each admin route names its own key (provision or admin).
   app.use('/api/admin', adminRoutes);
   app.use('/api/devices', requireSession, deviceRoutes);
+  app.use('/api/music', requireSession, musicRoutes);
   app.use('/api', pairingRoutes);
 
   app.use(unknownRoute);

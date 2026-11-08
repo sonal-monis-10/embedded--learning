@@ -39,3 +39,22 @@ export function publishImu(deviceId, reading) {
 export function publishCommand(deviceId, command) {
   transport.publish(`d/${deviceId}/cmd`, command);
 }
+
+// Music mode (docs/plan/phase-3-music.md). All three are retained, so a
+// device that reconnects mid-song gets the song, its lyrics and the clock.
+// Each carries the song ID; the device ignores pieces from another song.
+
+// {id, title, artist, durationMs, lyrics, hasLyrics} or null.
+export function publishTrack(deviceId, track) {
+  transport.publish(`d/${deviceId}/music/track`, track, { retain: true });
+}
+
+// Plain text, "#<songId>" then one "<ms>\t<text>" per line; or null.
+export function publishLines(deviceId, text) {
+  transport.publish(`d/${deviceId}/music/lines`, text, { retain: true });
+}
+
+// {id, pos, playing, at}: the song was at `pos` ms at server time `at`.
+export function publishSync(deviceId, sync) {
+  transport.publish(`d/${deviceId}/music/sync`, sync, { retain: true });
+}
