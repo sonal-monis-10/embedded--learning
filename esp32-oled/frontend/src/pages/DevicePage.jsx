@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { ChevronLeft, Lightbulb, Pencil, Smartphone } from 'lucide-react';
+import MusicPanel from '../components/MusicPanel.jsx';
 import OledPreview from '../components/OledPreview.jsx';
 import StatusPill from '../components/StatusPill.jsx';
 import { ErrorCard, WakingNotice } from '../components/Notice.jsx';
@@ -156,6 +157,7 @@ function Controls({ device, me, onChange }) {
       </section>
 
       {device.mode === 'eyes' && <TiltCard tilt={live.tilt} connected={live.connected} />}
+      {device.mode === 'music' && <MusicPanel deviceId={device.id} />}
 
       <div className="action-bar">
         <button type="button" className="btn btn-secondary" onClick={identify} disabled={pinged}>

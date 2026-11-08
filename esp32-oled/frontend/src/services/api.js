@@ -27,3 +27,21 @@ export const leaveDevice = (id, opts) =>
 // command: { op: 'identify' } | { op: 'reboot' } | { op: 'brightness', value: 0-255 }
 export const sendCommand = (id, command, opts) =>
   request(`/api/devices/${id}/commands`, { method: 'POST', body: command, ...opts });
+
+// Music mode (backend/routes/music.js and devices.js).
+// results: [{ id, title, artist, album, durationMs, lyrics: 'synced' | 'other-script' | 'none' }]
+export const searchMusic = (q, opts) =>
+  request(`/api/music/search?q=${encodeURIComponent(q)}`, opts);
+
+// { music: null | { song: {…, lines: [[ms, text]]}, lyrics, playing, positionMs, at } }
+export const getMusic = (id, opts) => request(`/api/devices/${id}/music`, opts);
+
+export const chooseSong = (id, songId, lyrics, opts) =>
+  request(`/api/devices/${id}/music`, { method: 'PUT', body: { songId, lyrics }, ...opts });
+
+export const stopMusic = (id, opts) =>
+  request(`/api/devices/${id}/music`, { method: 'DELETE', ...opts });
+
+// body: { op: 'play' | 'pause' } | { op: 'seek' | 'nudge', value: ms } | { op: 'lyrics', value: bool }
+export const musicControl = (id, body, opts) =>
+  request(`/api/devices/${id}/music/control`, { method: 'POST', body, ...opts });
