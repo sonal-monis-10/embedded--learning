@@ -110,11 +110,6 @@ uneven network timing.
 - Measured on screen in a debug build: fps, `imu` packets/s, end-to-end
   latency estimate (phone timestamp vs. arrival, after clock offset).
 
-### D4. Wokwi
-The simulator receives `imu` from your phone exactly like hardware, since
-it is just another registered device. This allows developing the eye
-animations without the board.
-
 ## E. Tests
 
 | Test | Pass condition |
@@ -125,11 +120,10 @@ animations without the board.
 | Loss | 30 % random packet drop (test flag) still looks smooth |
 | Security | Tilt readings from a phone that does not control the device are refused at `/api/live`; malformed or oversized readings are dropped |
 | Idle | Closing the page → idle look-around within 2 s, sleep after 60 s |
-| Simulator | Same behaviour in Wokwi (lower fps acceptable) |
 
 ## F. Done when
 
-- [ ] Tilting the phone moves the eyes with no noticeable lag, on hardware and Wokwi.
+- [ ] Tilting the phone moves the eyes with no noticeable lag.
 - [ ] Blink, shake, face-down, idle and expression behaviours all work.
 - [ ] Calibrate makes any holding angle "neutral".
 - [ ] Works on iPhone Safari and Android Chrome.

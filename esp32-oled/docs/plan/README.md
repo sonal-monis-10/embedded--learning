@@ -4,7 +4,7 @@ Status: **draft v2, waiting for confirmation**. Nothing here is built yet.
 
 | Phase | Goal | File |
 |-------|------|------|
-| 1 | **Foundation**: repo split (`firmware/` `backend/` `frontend/`), self-registering devices, QR-on-the-OLED pairing (no accounts, one phone per device), Docker firmware build (hardware + Wokwi), secure MQTT connection, robot eyes over a tilt stream | [phase-1-foundation.md](phase-1-foundation.md) |
+| 1 | **Foundation**: repo split (`firmware/` `backend/` `frontend/`), self-registering devices, QR-on-the-OLED pairing (no accounts, one phone per device), Docker firmware build, secure MQTT connection, robot eyes over a tilt stream | [phase-1-foundation.md](phase-1-foundation.md) |
 | 2 | **Robot Eyes**: phone gyroscope/accelerometer drives animated eyes in real time | [phase-2-robot-eyes.md](phase-2-robot-eyes.md) |
 | 3 | **Music mode**: pick a song; spinning disc + progress bar, or synced lyrics | [phase-3-music.md](phase-3-music.md) |
 | 4 | **AI lyric animations**: Claude designs a reels-style animation per song | [phase-4-ai-animations.md](phase-4-ai-animations.md) |
@@ -103,7 +103,7 @@ can take its place.
 | Wi-Fi credentials | In the firmware build env (`firmware.env`), not on the server | The device needs Wi-Fi before it can reach the server at all |
 | Phone sign-in | **No email or password.** The OLED shows its device ID and a one-time **pairing QR + code** sent by the server; a phone scans it, enters a name, and becomes that device's **only controller** until it leaves, goes idle 10 min, or midnight | Nothing to sign up for; one person plays at a time. See §4.4 |
 | Who can add devices | Any firmware holding the **`PROVISION_KEY`** (registration only: rate-limited, capped, replaceable). Maintenance routes (delete, rotate, cleanup) need the separate **`ADMIN_KEY`**. There is **no admin web page** | Self-registration without opening device control to anyone |
-| Firmware build | **Docker** image runs PlatformIO and outputs ready-to-flash binaries for hardware (SH1106) and **Wokwi** (SSD1306) | Repeatable builds, no local toolchain needed, secret passed as a build secret |
+| Firmware build | **Docker** image runs PlatformIO and outputs ready-to-flash binaries for SH1106 and SSD1306 boards | Repeatable builds, no local toolchain needed, secret passed as a build secret |
 | Lyrics source | [LRCLIB](https://lrclib.net) (free, timed lyrics) | Spotify has no lyrics API and needs Premium for new apps (Feb 2026) |
 | AI | Claude API (`claude-opus-5-5`), phase 4 only | Generates animation timelines |
 
@@ -126,8 +126,8 @@ can take its place.
                                       │                        Dynamic Security        │     │  when free; eyes /     │
                                       │   admin client ───────► $CONTROL (device logins)│    │  music when playing    │
                                       │   backend client ─────► d/+/status, publish    │     └────────────────────────┘
-                                      │                         pairing, mode, imu     │       Wokwi runs the same
-                                      └────────────┼───────────────────────────────────┘       firmware (SSD1306 build)
+                                      │                         pairing, mode, imu     │
+                                      └────────────┼───────────────────────────────────┘
                                                    ▼
                                       MongoDB Atlas M0 (source of truth): devices, users,
                                       sessions, pairing codes, events, songs, playback
@@ -162,12 +162,12 @@ Render free-tier notes:
 ```
 esp32-oled/
 ├── firmware/                  ← the current PlatformIO project, moved here
-│   ├── platformio.ini         envs: hw_sh1106, hw_ssd1306, sim_ssd1306, scanner
+│   ├── platformio.ini         envs: hw_sh1106, hw_ssd1306, scanner
 │   ├── src/                   main.cpp, net/, modes/, display/, app/
 │   ├── include/
 │   ├── scripts/gen_config.py  PlatformIO pre-script: env vars → generated config header
 │   ├── tools/i2c_bus_scanner.cpp
-│   ├── wokwi/                 diagram.json, wokwi.toml
+│   ├── diagram.json           wiring diagram
 │   ├── Dockerfile             PlatformIO build image → exports binaries
 │   └── Makefile               local (non-Docker) shortcuts, as today
 ├── backend/
@@ -247,10 +247,10 @@ keep working; only new builds need the new key).
  1. BUILD         firmware.env (git-ignored):
                     PROVISION_KEY=…   API_URL=https://<backend>.onrender.com
                     BROKER_URL=wss://<backend>.onrender.com/mqtt
-                    WIFI_SSID=…  WIFI_PASS=…      (simulator: Wokwi-GUEST, no password)
-                  make firmware TARGET=hw|sim     (Docker, see phase 1 §B)
+                    WIFI_SSID=…  WIFI_PASS=…
+                  make firmware TARGET=hw         (Docker, see phase 1 §B)
                   → out/<target>/firmware-merged.bin, firmware.elf, manifest.json
- 2. FLASH / RUN   hardware: make flash PORT=/dev/ttyUSB0     Wokwi: make sim
+ 2. FLASH / RUN   make flash PORT=/dev/ttyUSB0
  3. PROVISION     first boot, no credentials in flash:
                     POST /api/admin/devices  X-Provision-Key: …  {kind, display, fw}
                     → {deviceId: "oled-7k2m9q", secret}  → saved in NVS
@@ -472,9 +472,7 @@ self-signed certificate.
 `/* → /index.html` so React routes work on reload.
 
 **CI (GitHub Actions):** backend tests, frontend build, firmware Docker
-build for all envs with a dummy `firmware.env`, and optionally a Wokwi smoke
-test (`wokwi-cli`, needs a `WOKWI_CLI_TOKEN` secret) that checks the serial
-log for `MQTT connected`.
+build for all envs with a dummy `firmware.env`.
 
 ---
 

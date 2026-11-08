@@ -1,6 +1,6 @@
 # Phase 1: Foundation
 
-**Goal:** flash the firmware (real board or Wokwi). On first boot it
+**Goal:** flash the firmware to the board. On first boot it
 registers itself, connects over encrypted MQTT, and the OLED shows its
 **device ID, a pairing QR and the code**. A visitor scans it, types a
 name, and becomes the device's only controller: they pick a mode and
@@ -26,7 +26,6 @@ especially §4.2 (device lifecycle) and §4.4 (pairing).
 | E1 | Deploy on Render from `esp32-oled/render.yaml`: backend (Docker, Mosquitto inside) and the frontend static site, each given the other's host | **Done**: `/healthz` shows db up, broker ready |
 | 4 | Firmware on the **real board**, against the Render backend | **Written**, all envs compile (`make check`); flash with `make oled` |
 | 5 | Frontend rebuild for the new flow, with the review fixes (auto-deploys on push) | After step 4 |
-| W | Wokwi simulation (needs the deployed backend: Wokwi's free gateway cannot reach a laptop) | Last |
 
 ---
 
@@ -48,7 +47,6 @@ X-Provision-Key: ••••••••
 - The server generates the ID and secret; the firmware never chooses them.
 - Refused when `MAX_DEVICES` is reached (`409 device_limit`), and
   rate-limited to 5 per minute per IP.
-- Simulators must use `ssd1306` (Wokwi has no SH1106 part).
 - Wi-Fi is gone from the server: no Wi-Fi fields, no `.env` download.
 - The other admin routes stay behind `X-Admin-Key`: list, details +
   events, delete, rotate secret (the device re-provisions on next boot),
@@ -106,7 +104,7 @@ interface, so the logic and its tests are done in step 2.
 
 ### 2.6 Tests
 
-Provisioning (key, limit, rate limit, simulator display rule); pairing
+Provisioning (key, limit, rate limit); pairing
 (only free devices, atomic race, previous device released, same error for
 wrong/used/expired codes); release (leave, logout, idle timer with a fake
 clock, cleanup); issuer (issues for free+online, re-issues before expiry,
@@ -206,13 +204,12 @@ reads it, **fails the build** on a missing value or a non-`https`/`wss`
 URL (unless `DEV_INSECURE=1` for a local backend), and writes
 `.pio/build/<env>/generated/build_config.h` with the values escaped,
 plus `FW_VERSION`, `FW_GIT_SHA`, `FW_BUILT_AT`. Secrets stay out of
-compiler command lines and logs. The simulator env forces Wokwi-GUEST.
+compiler command lines and logs.
 
 | Env | Display | Used for |
 |-----|---------|----------|
 | `hw_sh1106` (default) | SH1106 | your 1.3" module |
 | `hw_ssd1306` | SSD1306 | 0.96" modules |
-| `sim_ssd1306` | SSD1306 | Wokwi (no SH1106 part), step W |
 | `demo_sh1106`, `demo_ssd1306` | both | the original Hello demo, `tools/oled_demo.cpp` |
 | `scanner` | — | I2C scanner, unchanged |
 
@@ -241,14 +238,13 @@ FROM scratch AS export
 COPY --from=build /out/ /
 ```
 
-`make firmware TARGET=hw` (or `sim`) runs `docker build` with
+`make firmware TARGET=hw` runs `docker build` with
 `--secret id=firmware_env,src=firmware/firmware.env` and
 `--output type=local,dest=out/<target>`. The secret file is mounted only
 for that `RUN` and never stored in a layer; no image is pushed. Outputs:
-`firmware-merged.bin` (flash at `0x0`, also what Wokwi loads),
+`firmware-merged.bin` (flash at `0x0`),
 `firmware.elf`, `manifest.json` (env, display, version, git SHA; no
-secrets). `make flash PORT=/dev/ttyUSB0` and `make sim` (Wokwi diagram
-with an ESP32 DevKit V1 and `board-ssd1306` on GPIO 21/22).
+secrets). `make flash PORT=/dev/ttyUSB0`.
 
 One build serves any number of boards: every board provisions its own
 ID and secret on first boot.
@@ -341,7 +337,7 @@ Review fixes carried in:
 
 ## Done when
 
-- [ ] Flashing the same build on a real board and in Wokwi: each registers itself and shows its own ID, QR and code.
+- [ ] Flashing a real board: it registers itself and shows its own ID, QR and code.
 - [ ] Scanning the QR with a phone, typing a name and tapping **Start playing** takes over the device; the QR disappears and the eyes appear.
 - [ ] Tilting the phone moves the eyes; the drag pad does too.
 - [ ] Pairing a second device from the same phone frees the first, which shows a new QR.
@@ -362,4 +358,3 @@ Review fixes carried in:
 | Mosquitto and MongoDB disagree after a crash | MongoDB is the truth; every startup rebuilds Mosquitto from it |
 | Losing `SECRETS_KEY` | Back it up; recovery is rotating every device (they re-provision) |
 | Render free cold start (~1 min) | Device shows "connecting" with back-off; phone shows "waking up the server" |
-| Wokwi public gateway is slow at times | Simulation is for development; hardware is the reference |

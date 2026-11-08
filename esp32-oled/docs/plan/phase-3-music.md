@@ -136,6 +136,6 @@ into a compact array. If a song is too long, the backend splits it into
 ## F. Done when
 
 - [ ] Search → select → OLED shows the song within 2 s.
-- [ ] Lyrics-off disc screen and lyrics-on karaoke screen both work, on hardware and Wokwi.
+- [ ] Lyrics-off disc screen and lyrics-on karaoke screen both work on hardware.
 - [ ] Play/pause/seek/nudge from the phone work; sync holds for a full song.
 - [ ] Closing or locking the phone doesn't stop the song.

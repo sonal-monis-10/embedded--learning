@@ -24,7 +24,7 @@ A small physical screen that reacts to the phone in your hand: tilt it and robot
 - Visitors stand next to the device and look back and forth between their phone and the OLED; the device is the show, the phone is the controller.
 - In Eyes mode the phone is held and tilted while the app is open, so the app is used one-handed.
 - Pairing: a free device's OLED shows its device ID, a QR and the code in text (sent by the server). Codes are single-use and replaced every 2 minutes. A turn ends when the visitor taps Leave, after 10 minutes without activity, or at 00:00 IST, when all people data is wiped; the OLED then shows a fresh QR.
-- The device or simulator may be offline or the free Render backend may be waking up (~1 min cold start); visitors will hit these states.
+- The device may be offline or the free Render backend may be waking up (~1 min cold start); visitors will hit these states.
 
 ## Capabilities and Constraints
 
