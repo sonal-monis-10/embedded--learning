@@ -15,23 +15,17 @@ import { release } from '../utils/turns.js';
 // Mounted at /api/admin. Two keys guard it: firmware registers itself with
 // the PROVISION_KEY; everything else is maintenance with the ADMIN_KEY.
 
-const provisionSchema = z
-  .object({
-    kind: z.enum(['hardware', 'simulator']),
-    display: z.enum(['sh1106', 'ssd1306']),
-    fw: z
-      .object({
-        version: z.string().max(32).optional(),
-        gitSha: z.string().max(40).optional(),
-        builtAt: z.coerce.date().optional(),
-      })
-      .optional(),
-  })
-  // Wokwi has no SH1106 part.
-  .refine((d) => d.kind === 'hardware' || d.display === 'ssd1306', {
-    path: ['display'],
-    message: 'must be ssd1306 for simulators',
-  });
+const provisionSchema = z.object({
+  kind: z.literal('hardware'),
+  display: z.enum(['sh1106', 'ssd1306']),
+  fw: z
+    .object({
+      version: z.string().max(32).optional(),
+      gitSha: z.string().max(40).optional(),
+      builtAt: z.coerce.date().optional(),
+    })
+    .optional(),
+});
 
 const admin = [adminKeyLimiter, requireAdmin];
 

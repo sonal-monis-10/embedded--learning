@@ -35,7 +35,7 @@ const deviceSchema = new Schema(
   {
     // Also the device's MQTT username, e.g. "oled-7k2m9q".
     _id: { type: String, match: DEVICE_ID_PATTERN },
-    kind: { type: String, enum: ['hardware', 'simulator'], required: true },
+    kind: { type: String, enum: ['hardware'], required: true },
     display: { type: String, enum: ['sh1106', 'ssd1306'], required: true },
 
     // MQTT password, only loaded when a query asks: .select('+secret').

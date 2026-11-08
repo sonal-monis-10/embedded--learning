@@ -31,12 +31,12 @@ describe('provisioning (first boot)', () => {
     await t.admin.post('/api/admin/devices').send(body).expect(401);
   });
 
-  it('simulators must use the SSD1306 display', async () => {
+  it('only registers hardware devices', async () => {
     const res = await t.firmware
       .post('/api/admin/devices')
-      .send({ kind: 'simulator', display: 'sh1106' })
+      .send({ kind: 'simulator', display: 'ssd1306' })
       .expect(400);
-    assert.match(res.body.error.message, /^display:/);
+    assert.match(res.body.error.message, /^kind:/);
   });
 });
 
