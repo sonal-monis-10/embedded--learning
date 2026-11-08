@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router';
+import { Link, useNavigate, useSearchParams } from 'react-router';
 import { ChevronRight, ScanLine } from 'lucide-react';
 import OledPreview from '../components/OledPreview.jsx';
 import StatusPill from '../components/StatusPill.jsx';
@@ -9,7 +9,7 @@ import { getMe, logout } from '../services/api.js';
 import { clearSession, loadSession } from '../services/session.js';
 import { useRequest } from '../services/useRequest.js';
 
-// "/": the devices on this phone's pass, or how to get one.
+// "/": the one screen this phone controls, or how to get one.
 export default function HomePage() {
   return loadSession() ? <MyDevices /> : <HowToStart />;
 }
@@ -46,6 +46,8 @@ function HowToStart({ ended = false }) {
 function MyDevices() {
   const navigate = useNavigate();
   const me = useRequest((opts) => getMe(opts), 'me');
+  const [params] = useSearchParams();
+  const ended = params.get('ended');
   const [signingOut, setSigningOut] = useState(false);
 
   if (me.error?.code === 'session_required') return <HowToStart ended />;
@@ -63,15 +65,15 @@ function MyDevices() {
     <div className="page">
       <header className="page-head">
         <p className="brand">OLED Control</p>
-        <h1>{name ? `Hi ${name}` : 'Your devices'}</h1>
+        <h1>{name ? `Hi ${name}` : 'Your screen'}</h1>
       </header>
 
       {me.slow && <WakingNotice />}
-      {me.loading && <div className="card skeleton" aria-label="Loading your devices" />}
+      {me.loading && <div className="card skeleton" aria-label="Loading your screen" />}
 
       {me.error && (
         <ErrorCard
-          title="Could not load your devices"
+          title="Could not load your screen"
           action={
             <button type="button" className="btn btn-secondary" onClick={me.reload}>
               Try again
@@ -82,25 +84,26 @@ function MyDevices() {
         </ErrorCard>
       )}
 
-      {me.data?.devices.length === 0 && (
+      {me.data && !me.data.device && (
         <section className="card">
-          <h2 className="card-title">Not on any device</h2>
-          <p className="card-text">
-            You were removed, or you left. Scan a device’s QR code to join it again.
-          </p>
+          <h2 className="card-title">{endedTitle(ended)}</h2>
+          <p className="card-text">Scan a screen’s QR code to play again.</p>
+          <Link to="/pair" className="btn btn-secondary">
+            Type a code
+          </Link>
         </section>
       )}
 
-      {me.data?.devices.map((device) => (
-        <Link key={device.id} to={`/devices/${device.id}`} className="card device-link">
-          <OledPreview mode={device.mode} className="oled-small" />
+      {me.data?.device && (
+        <Link to={`/devices/${me.data.device.id}`} className="card device-link">
+          <OledPreview mode={me.data.device.mode} className="oled-small" />
           <span className="device-link-text">
-            <span className="device-name">{device.name ?? 'Unnamed screen'}</span>
-            <StatusPill device={device} />
+            <span className="device-name">{me.data.device.name ?? 'Unnamed screen'}</span>
+            <StatusPill device={me.data.device} />
           </span>
           <ChevronRight size={22} aria-hidden="true" className="device-link-arrow" />
         </Link>
-      ))}
+      )}
 
       {me.data && (
         <footer className="page-foot">
@@ -112,4 +115,11 @@ function MyDevices() {
       )}
     </div>
   );
+}
+
+// Why the phone no longer controls a screen (?ended= from the device page).
+function endedTitle(reason) {
+  if (reason === 'left') return 'You left the screen';
+  if (reason === 'idle') return 'Your turn ended after a quiet while';
+  return 'Not playing with a screen';
 }

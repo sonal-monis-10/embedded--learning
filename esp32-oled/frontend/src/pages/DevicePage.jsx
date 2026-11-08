@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
-import { ChevronLeft, Pencil, UserPlus, X } from 'lucide-react';
-import AddPhonePanel from '../components/AddPhonePanel.jsx';
+import { ChevronLeft, Lightbulb, Pencil, Smartphone } from 'lucide-react';
 import OledPreview from '../components/OledPreview.jsx';
 import StatusPill from '../components/StatusPill.jsx';
 import { ErrorCard, WakingNotice } from '../components/Notice.jsx';
 import { connectionProblem } from '../services/messages.js';
-import { getDevice, removeMember, renameDevice, setMode } from '../services/api.js';
+import { getDevice, leaveDevice, renameDevice, sendCommand, setMode } from '../services/api.js';
+import { useLive } from '../services/live.js';
 import { loadSession } from '../services/session.js';
 import { useRequest } from '../services/useRequest.js';
 
@@ -32,7 +32,7 @@ export default function DevicePage() {
   if (request.error?.code === 'device_not_found') {
     return (
       <Problem title="This screen is not on your pass">
-        Scan the QR code next to it to join, or ask its owner to add your phone.
+        Someone else may be using it now. Scan its QR code when it shows one.
       </Problem>
     );
   }
@@ -42,7 +42,7 @@ export default function DevicePage() {
       <nav className="top-nav">
         <Link to="/" className="text-link back-link">
           <ChevronLeft size={20} aria-hidden="true" />
-          My devices
+          My screen
         </Link>
       </nav>
 
@@ -64,49 +64,54 @@ export default function DevicePage() {
       {request.data && (
         <Controls
           device={request.data.device}
-          members={request.data.members}
           me={session}
-          onChange={(device) => request.setData((data) => ({ ...data, device }))}
-          onMembersChange={(members) => request.setData((data) => ({ ...data, members }))}
+          onChange={(update) =>
+            request.setData((data) => ({ ...data, device: update(data.device) }))
+          }
         />
       )}
     </div>
   );
 }
 
-function Controls({ device, members, me, onChange, onMembersChange }) {
+function Controls({ device, me, onChange }) {
   const navigate = useNavigate();
-  const isOwner = device.role === 'owner';
   const [modeState, setModeState] = useState('idle');
   const [modeError, setModeError] = useState(null);
-  const [adding, setAdding] = useState(false);
   const [confirmLeave, setConfirmLeave] = useState(false);
+  const [pinged, setPinged] = useState(false);
+
+  const live = useLive({
+    onStatus: ({ online, mode }) => onChange((d) => ({ ...d, online, mode })),
+    onReleased: (reason) => navigate(`/?ended=${reason}`, { replace: true }),
+  });
 
   async function chooseMode(mode) {
     const previous = device.mode;
-    onChange({ ...device, mode });
+    onChange((d) => ({ ...d, mode }));
     setModeState('saving');
     setModeError(null);
     try {
       await setMode(device.id, mode);
       setModeState('saved');
     } catch (err) {
-      onChange({ ...device, mode: previous });
+      onChange((d) => ({ ...d, mode: previous }));
       setModeError(err);
       setModeState('idle');
     }
   }
 
-  async function remove(member) {
-    await removeMember(device.id, member.id);
-    if (member.id === me.userId) {
-      navigate('/', { replace: true });
-    } else {
-      onMembersChange(members.filter((m) => m.id !== member.id));
-    }
+  async function identify() {
+    setPinged(true);
+    await sendCommand(device.id, { op: 'identify' }).catch(() => {});
+    setTimeout(() => setPinged(false), 2000);
   }
 
-  const you = members.find((m) => m.id === me.userId);
+  async function leave() {
+    live.tilt.stop();
+    await leaveDevice(device.id).catch(() => {});
+    navigate('/?ended=left', { replace: true });
+  }
 
   return (
     <>
@@ -116,7 +121,7 @@ function Controls({ device, members, me, onChange, onMembersChange }) {
 
       <section className="card screen-card" aria-labelledby="device-name">
         <OledPreview mode={device.mode} className="oled-hero" />
-        <DeviceName device={device} isOwner={isOwner} onRenamed={onChange} />
+        <DeviceName device={device} onRenamed={(renamed) => onChange(() => renamed)} />
         <StatusPill device={device} />
       </section>
 
@@ -150,59 +155,67 @@ function Controls({ device, members, me, onChange, onMembersChange }) {
         </p>
       </section>
 
-      {adding && <AddPhonePanel deviceId={device.id} onClose={() => setAdding(false)} />}
-
-      <section className="card" aria-labelledby="people-title">
-        <h2 id="people-title" className="card-title">
-          People playing
-        </h2>
-        <ul className="people">
-          {members.map((member) => (
-            <li key={member.id} className="person">
-              <span className="person-name">
-                {member.name}
-                {member.id === me.userId && <span className="muted"> (you)</span>}
-              </span>
-              <span className="person-meta">
-                {member.role === 'owner' ? 'Owner' : 'Playing'} since {formatTime(member.joinedAt)}
-              </span>
-              {isOwner && member.id !== me.userId && (
-                <button
-                  type="button"
-                  className="icon-btn"
-                  onClick={() => remove(member)}
-                  aria-label={`Remove ${member.name}`}
-                >
-                  <X size={20} aria-hidden="true" />
-                </button>
-              )}
-            </li>
-          ))}
-        </ul>
-      </section>
+      {device.mode === 'eyes' && <TiltCard tilt={live.tilt} connected={live.connected} />}
 
       <div className="action-bar">
-        {isOwner && !adding && (
-          <button type="button" className="btn btn-primary" onClick={() => setAdding(true)}>
-            <UserPlus size={20} aria-hidden="true" />
-            Add a phone
-          </button>
-        )}
-        {!isOwner && you && (
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={() => (confirmLeave ? remove(you) : setConfirmLeave(true))}
-          >
-            {confirmLeave ? 'Tap again to leave' : 'Leave this screen'}
-          </button>
-        )}
+        <button type="button" className="btn btn-secondary" onClick={identify} disabled={pinged}>
+          <Lightbulb size={20} aria-hidden="true" />
+          {pinged ? 'Look at the screen' : 'Which screen is mine?'}
+        </button>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          onClick={() => (confirmLeave ? leave() : setConfirmLeave(true))}
+        >
+          {confirmLeave ? 'Tap again to leave' : 'Leave this screen'}
+        </button>
       </div>
     </>
   );
 }
 
-function DeviceName({ device, isOwner, onRenamed }) {
+// Eyes mode: stream the phone's tilt so the eyes follow it.
+function TiltCard({ tilt, connected }) {
+  return (
+    <section className="card" aria-labelledby="tilt-title">
+      <h2 id="tilt-title" className="card-title">
+        <Smartphone size={22} aria-hidden="true" />
+        Move the eyes
+      </h2>
+      {tilt.state === 'unsupported' && (
+        <p className="card-text">
+          This browser can’t read your phone’s tilt. Try Chrome or Safari on a phone.
+        </p>
+      )}
+      {tilt.state === 'denied' && (
+        <p className="card-text">
+          Motion access was blocked. Allow “Motion &amp; Orientation” for this site in your browser
+          settings, then reload.
+        </p>
+      )}
+      {tilt.state === 'off' && (
+        <>
+          <p className="card-text">Tilt your phone and the eyes on the screen look the same way.</p>
+          <button type="button" className="btn btn-primary" onClick={tilt.start}>
+            Start tilting
+          </button>
+        </>
+      )}
+      {tilt.state === 'on' && (
+        <>
+          <p className="card-text" aria-live="polite">
+            {connected ? 'Tilt your phone. The eyes follow it.' : 'Reconnecting…'}
+          </p>
+          <button type="button" className="btn btn-secondary" onClick={tilt.stop}>
+            Stop
+          </button>
+        </>
+      )}
+    </section>
+  );
+}
+
+function DeviceName({ device, onRenamed }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(device.name ?? '');
   const [error, setError] = useState(null);
@@ -244,16 +257,14 @@ function DeviceName({ device, isOwner, onRenamed }) {
       <h2 id="device-name" className="device-name">
         {device.name ?? 'Unnamed screen'}
       </h2>
-      {isOwner && (
-        <button
-          type="button"
-          className="icon-btn"
-          onClick={() => setEditing(true)}
-          aria-label="Rename this screen"
-        >
-          <Pencil size={18} aria-hidden="true" />
-        </button>
-      )}
+      <button
+        type="button"
+        className="icon-btn"
+        onClick={() => setEditing(true)}
+        aria-label="Rename this screen"
+      >
+        <Pencil size={18} aria-hidden="true" />
+      </button>
     </div>
   );
 }
@@ -277,8 +288,4 @@ function Problem({ title, children }) {
       </ErrorCard>
     </div>
   );
-}
-
-function formatTime(iso) {
-  return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
