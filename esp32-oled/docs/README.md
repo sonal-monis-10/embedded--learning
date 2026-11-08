@@ -2,6 +2,7 @@
 
 | File | What it covers |
 |------|----------------|
+| [DEPLOY.md](DEPLOY.md) | **Deployment steps**: everyday redeploy, first-time Render setup, troubleshooting |
 | [architecture.html](architecture.html) | **Architecture diagram** (open in a browser): phone, frontend, Express + Mosquitto on Render, MongoDB, ESP32 / Wokwi, later-phase LRCLIB and Claude |
 | [how-main-works.md](how-main-works.md) | Walk-through of `firmware/tools/oled_demo.cpp`: build flags, `setup()`, `loop()`, drawing calls, where to make changes |
 | [plan/](plan/README.md) | **Draft plan**: architecture, security, API, and 4 phases (foundation, robot eyes, music, AI animations) |
