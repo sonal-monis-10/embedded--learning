@@ -17,6 +17,4 @@ void pairing(const String &deviceId, const String &code, const String &url);
 void idle();
 
 // Placeholder until phase 3 brings the music mode.
-void music();
-
 }  // namespace screens

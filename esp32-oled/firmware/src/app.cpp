@@ -6,6 +6,7 @@
 #include "build_config.h"
 #include "display.h"
 #include "modes/eyes.h"
+#include "modes/music.h"
 #include "net/mqtt_link.h"
 #include "net/provision.h"
 #include "screens/screens.h"
@@ -83,7 +84,7 @@ void drawScreen(uint32_t nowMs) {
       } else if (mode == Mode::Eyes) {
         eyes::draw(nowMs);
       } else if (mode == Mode::Music) {
-        screens::music();
+        music::draw(nowMs);
       } else {
         screens::idle();
       }
@@ -94,7 +95,7 @@ void drawScreen(uint32_t nowMs) {
 // Screens that change every frame; the rest redraw only when dirty.
 bool animating() {
   return state == State::SetupFailed ||
-         (state == State::Online && !pairingShown && mode == Mode::Eyes);
+         (state == State::Online && !pairingShown && mode != Mode::Idle);
 }
 
 void onPairing(const char *payload) {
@@ -172,12 +173,16 @@ void handleEvents(uint32_t nowMs) {
         break;
       case mqtt_link::EventType::Message:
         switch (event.topic) {
-          case mqtt_link::Topic::Pairing: onPairing(event.payload); break;
-          case mqtt_link::Topic::Mode: onMode(event.payload); break;
-          case mqtt_link::Topic::Imu: onImu(event.payload, nowMs); break;
-          case mqtt_link::Topic::Cmd: onCommand(event.payload, nowMs); break;
+          case mqtt_link::Topic::Pairing: onPairing(event.text()); break;
+          case mqtt_link::Topic::Mode: onMode(event.text()); break;
+          case mqtt_link::Topic::Imu: onImu(event.text(), nowMs); break;
+          case mqtt_link::Topic::Cmd: onCommand(event.text(), nowMs); break;
+          case mqtt_link::Topic::MusicTrack: music::onTrack(event.text()); dirty = true; break;
+          case mqtt_link::Topic::MusicLines: music::onLines(event.text()); dirty = true; break;
+          case mqtt_link::Topic::MusicSync: music::onSync(event.text(), nowMs); break;
           case mqtt_link::Topic::Other: break;
         }
+        mqtt_link::release(event);
         break;
     }
   }
@@ -248,6 +253,8 @@ void tick() {
     case State::Wifi:
       if (wifiUp) {
         Serial.printf("[app] Wi-Fi up, %s, RSSI %d\n", WiFi.localIP().toString().c_str(), WiFi.RSSI());
+        // Wall-clock time (UTC), so music sync can allow for message delay.
+        configTime(0, 0, "pool.ntp.org", "time.google.com");
         enter(haveCreds ? State::Connecting : State::Registering);
       }
       break;

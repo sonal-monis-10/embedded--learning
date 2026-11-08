@@ -22,10 +22,10 @@ String username, password, statusTopic, prefix;
 
 const char *const OFFLINE = "{\"online\":false}";
 
-void push(const Event &event) {
+void push(Event &event) {
   // Never block esp-mqtt's task; a full queue drops the event (only tilt
   // readings arrive fast enough for that, and the next one follows).
-  xQueueSend(queue, &event, 0);
+  if (xQueueSend(queue, &event, 0) != pdTRUE) release(event);
 }
 
 Topic topicFrom(const char *name, int length) {
@@ -36,6 +36,9 @@ Topic topicFrom(const char *name, int length) {
   if (leaf == "mode") return Topic::Mode;
   if (leaf == "imu") return Topic::Imu;
   if (leaf == "cmd") return Topic::Cmd;
+  if (leaf == "music/track") return Topic::MusicTrack;
+  if (leaf == "music/lines") return Topic::MusicLines;
+  if (leaf == "music/sync") return Topic::MusicSync;
   return Topic::Other;
 }
 
@@ -53,7 +56,7 @@ void onEvent(void *, esp_event_base_t, int32_t id, void *data) {
 
   switch (static_cast<esp_mqtt_event_id_t>(id)) {
     case MQTT_EVENT_CONNECTED:
-      for (const char *leaf : {"pairing", "mode", "imu", "cmd"}) {
+      for (const char *leaf : {"pairing", "mode", "imu", "cmd", "music/#"}) {
         esp_mqtt_client_subscribe(client, (prefix + leaf).c_str(), 0);
       }
       publishOnline();
@@ -78,13 +81,19 @@ void onEvent(void *, esp_event_base_t, int32_t id, void *data) {
       break;
 
     case MQTT_EVENT_DATA:
-      // Only whole messages: ours are far smaller than the 4 KB buffer.
+      // Only whole messages; the 16 KB buffer holds a whole song's lyrics.
       if (event->current_data_offset != 0 || event->data_len != event->total_data_len) break;
-      if (event->data_len >= static_cast<int>(sizeof out.payload)) break;
       out.type = EventType::Message;
       out.topic = topicFrom(event->topic, event->topic_len);
-      memcpy(out.payload, event->data, event->data_len);
-      out.payload[event->data_len] = '\0';
+      if (event->data_len < static_cast<int>(sizeof out.payload)) {
+        memcpy(out.payload, event->data, event->data_len);
+        out.payload[event->data_len] = '\0';
+      } else {
+        out.large = static_cast<char *>(malloc(event->data_len + 1));
+        if (!out.large) break;  // out of memory: drop it
+        memcpy(out.large, event->data, event->data_len);
+        out.large[event->data_len] = '\0';
+      }
       push(out);
       break;
 
@@ -113,7 +122,8 @@ void start(const String &deviceId, const String &secret) {
   cfg.lwt_msg = OFFLINE;
   cfg.lwt_qos = 1;
   cfg.lwt_retain = 1;
-  cfg.buffer_size = 4096;
+  cfg.buffer_size = 16384;    // incoming: a song's lyrics arrive as one message
+  cfg.out_buffer_size = 1024; // outgoing: only the small status message
   cfg.network_timeout_ms = NETWORK_TIMEOUT_MS;
   cfg.reconnect_timeout_ms = RECONNECT_MS;
 
@@ -123,5 +133,10 @@ void start(const String &deviceId, const String &secret) {
 }
 
 bool poll(Event &out) { return queue && xQueueReceive(queue, &out, 0) == pdTRUE; }
+
+void release(Event &event) {
+  free(event.large);
+  event.large = nullptr;
+}
 
 }  // namespace mqtt_link

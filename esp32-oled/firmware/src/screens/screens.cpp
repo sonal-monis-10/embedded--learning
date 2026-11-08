@@ -83,8 +83,4 @@ void idle() {
   centred(52, "pick a mode");
 }
 
-void music() {
-  status("Music", "coming in phase 3");
-}
-
 }  // namespace screens
