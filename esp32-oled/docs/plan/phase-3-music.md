@@ -10,6 +10,29 @@ fixes any offset.
 
 Needs phase 1. Shared design: [README.md](README.md).
 
+## Status: built (no AI)
+
+| Part | Where |
+|------|-------|
+| LRCLIB client, LRC parser | `backend/utils/lrclib.js`, `backend/utils/lrc.js` |
+| Songs cache, playback clock | `backend/entity/song.js`, `device.music`, `backend/utils/music.js` |
+| Routes | `GET /api/music/search`, `GET/PUT/DELETE /api/devices/:id/music`, `POST /api/devices/:id/music/control` |
+| Phone | `frontend/src/components/MusicPanel.jsx` (shown in Music mode) |
+| Device | `firmware/src/modes/music.*`, topics `music/track`, `music/lines`, `music/sync` |
+| Tests | `backend/test/music.test.js` |
+
+Differences from the design below:
+- `music/lines` is plain text (`#<id>` then `<ms>\t<text>` per line), not
+  JSON: smaller, and parsed in place on the device. Capped at 15 KB.
+- The playing clock is re-sent every **5 s** (not 2 s); the device eases
+  small differences in, so this is plenty.
+- Lyrics LRCLIB has only in a non-Latin script (e.g. Devanagari) are shown
+  as **Title only**: the OLED font has English letters only. Search lists
+  readable lyrics first.
+- A playing song counts as activity, so the 10-minute idle release doesn't
+  end the turn while the phone is locked.
+- The device sets its clock with SNTP at boot to allow for message delay.
+
 ---
 
 ## A. Data flow

@@ -12,7 +12,7 @@ An ESP32 with a 1.3" OLED that you control from your phone: robot eyes that foll
 
 Three parts that work together: **firmware** for an ESP32 with an SH1106 OLED, a **backend** on Render that registers devices and hosts the MQTT broker, and a **frontend** where a phone pairs with a device by scanning a QR code. The OLED shows its own pairing QR; there are no accounts: you type a name when you pair, one person plays at a time, and all people data is wiped every night at 00:00 IST.
 
-**Status:** phase 1 of 4 ([plan](docs/plan/README.md)). Working end to end and deployed on Render: devices register themselves and show their pairing QR on the OLED, one phone per device, robot eyes that follow the phone's tilt, on a real board.
+**Status:** phases 1 and 3 of 4 ([plan](docs/plan/README.md)). Working end to end and deployed on Render: devices register themselves and show their pairing QR on the OLED, one phone per device, robot eyes that follow the phone's tilt, and music mode: search a song, play it in your own music app, and the OLED shows the lyrics in time (or a spinning disc and the progress).
 
 **Live:** phone app https://esp32-oled-web.onrender.com · API https://esp32-oled-api.onrender.com
 
