@@ -1,12 +1,32 @@
-# PlatformIO build artifacts and downloaded toolchains.
-# .pio/ can reach hundreds of MB — never commit it.
-.pio/
+# Project-wide ignores. firmware/ has its own .gitignore for PlatformIO files.
 
-# VS Code / PlatformIO IDE generated files.
-.vscode/
-!.vscode/extensions.json
+# Secrets: device env files from the dashboard and every .env* file,
+# including .env.example (none of them are ever committed). The variable
+# names are documented in docs/plan/README.md §8 and validated in
+# backend/utils/config.js. Every firmware binary in out/ contains its device
+# secret too.
+devices/*.env
+.env
+.env.*
+*.env
+out/
+
+# Node.js (backend/, frontend/)
+node_modules/
+dist/
+coverage/
+*.log
 
 # Editor and OS noise
 *.swp
 *~
 .DS_Store
+
+# Local agent tooling (graphify, impeccable, diagram-design, readme-wizard):
+# skills, hooks, settings, their instructions and generated files.
+# Not committed.
+.claude/
+CLAUDE.md
+.graphifyignore
+.impeccable/
+graphify-out/

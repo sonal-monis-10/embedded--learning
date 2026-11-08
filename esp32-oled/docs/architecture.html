@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>esp32-oled architecture</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper:   #f5f5f5;
+      --color-ink:     #2d3142;
+      --color-muted:   #4f5d75;
+      --font-sans:     'Geist', system-ui, sans-serif;
+      --font-serif:    'Instrument Serif', serif;
+      --font-mono:     'Geist Mono', ui-monospace, monospace;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 3rem 2rem;
+    }
+
+    .frame { max-width: 1280px; width: 100%; }
+    .diagram-container { width: 100%; overflow-x: auto; }
+
+    .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 0.5rem;
+    }
+
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.5rem, 2.4vw + 0.75rem, 2rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      color: var(--color-ink);
+      margin-bottom: 1.5rem;
+    }
+
+    svg { width: 100%; min-width: 1280px; display: block; }
+    @media print {
+      .diagram-container { overflow-x: visible; }
+      svg { min-width: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">Architecture · esp32-oled</p>
+    <h1>How a phone reaches the OLED</h1>
+
+    <div class="diagram-container">
+      <svg viewBox="0 136 1280 584" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="architecture-title architecture-desc">
+        <title id="architecture-title">How a phone reaches the OLED</title>
+        <desc id="architecture-desc">Architecture of the esp32-oled project: a phone loads the React frontend and calls the Express backend, which stores data in MongoDB and pipes MQTT over WebSockets to a Mosquitto broker in the same Render container, which the ESP32 connects to over TLS; LRCLIB and the Claude API join in later phases.</desc>
+        <defs>
+          <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+          <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#bf4520"/></marker>
+          <marker id="arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#2e5aa8"/></marker>
+        </defs>
+
+        <rect x="0" y="136" width="1280" height="584" fill="#f5f5f5"/>
+
+        <!-- Zone: the one Render web service (Docker): Express + Mosquitto -->
+        <rect x="360" y="176" width="520" height="304" rx="8"
+              fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+        <rect x="544" y="180" width="152" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="620" y="189" fill="#5a6580" font-size="7" font-family="'Geist Mono', monospace"
+              text-anchor="middle" letter-spacing="0.14em">RENDER WEB SERVICE · DOCKER</text>
+
+        <!-- Arrows first (behind boxes) -->
+
+        <!-- Phone → Express: REST and MQTT over WebSocket -->
+        <line x1="280" y1="244" x2="392" y2="244" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+        <!-- Phone → Frontend: loads the static app -->
+        <line x1="180" y1="280" x2="180" y2="376" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+        <!-- ESP32 → Express /mqtt: the device link (focal) -->
+        <line x1="960" y1="232" x2="600" y2="232" stroke="#bf4520" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+        <!-- Express → Mosquitto: byte pipe + dynsec admin -->
+        <path d="M 600,256 H 736 Q 744,256 744,264 V 376"
+              fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <!-- Express → MongoDB -->
+        <line x1="444" y1="280" x2="444" y2="560" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <!-- Express → LRCLIB (phase 3, optional) -->
+        <path d="M 496,280 V 512 Q 496,520 504,520 H 736 Q 744,520 744,528 V 560"
+              fill="none" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+        <!-- Express → Claude API (phase 4, optional) -->
+        <path d="M 548,280 V 492 Q 548,500 556,500 H 984 Q 992,500 992,508 V 560"
+              fill="none" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+
+        <!-- Arrow labels -->
+        <rect x="306" y="224" width="60" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="336" y="233" fill="#2e5aa8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">REST + WSS</text>
+
+        <rect x="190" y="322" width="52" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="216" y="331" fill="#2e5aa8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">LOAD APP</text>
+
+        <rect x="740" y="212" width="80" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="780" y="221" fill="#bf4520" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">MQTT · WSS+TLS</text>
+
+        <rect x="754" y="304" width="76" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="792" y="313" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">PIPE · DYNSEC</text>
+
+        <rect x="384" y="512" width="52" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="410" y="521" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">MONGOOSE</text>
+
+        <rect x="598" y="528" width="44" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="620" y="537" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">LYRICS</text>
+
+        <rect x="866" y="480" width="68" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="900" y="489" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">FX TIMELINE</text>
+
+        <!-- Node: Phone / laptop (input) -->
+        <rect x="80" y="208" width="200" height="72" rx="6" fill="#f5f5f5"/>
+        <rect x="80" y="208" width="200" height="72" rx="6" fill="rgba(79,93,117,0.10)" stroke="#5a6580" stroke-width="1"/>
+        <rect x="88" y="214" width="28" height="12" rx="2" fill="transparent" stroke="rgba(90,101,128,0.40)" stroke-width="0.8"/>
+        <text x="102" y="223" fill="#5a6580" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">USER</text>
+        <text x="180" y="248" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Phone / laptop</text>
+        <text x="180" y="264" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">pair by QR · gyro · admin</text>
+
+        <!-- Node: Frontend static site (cloud) -->
+        <rect x="80" y="376" width="200" height="72" rx="6" fill="#f5f5f5"/>
+        <rect x="80" y="376" width="200" height="72" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <rect x="88" y="382" width="40" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.22)" stroke-width="0.8"/>
+        <text x="108" y="391" fill="#5a6580" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">STATIC</text>
+        <text x="180" y="416" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Frontend</text>
+        <text x="180" y="432" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">Vite + React · Render</text>
+
+        <!-- Node: Express API (backend) -->
+        <rect x="392" y="208" width="208" height="72" rx="6" fill="#f5f5f5"/>
+        <rect x="392" y="208" width="208" height="72" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <rect x="400" y="214" width="28" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+        <text x="414" y="223" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">API</text>
+        <text x="496" y="248" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Express API</text>
+        <text x="496" y="264" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">Node 24 · /api · /mqtt pipe</text>
+
+        <!-- Node: Mosquitto broker (focal) -->
+        <rect x="640" y="376" width="208" height="72" rx="6" fill="#f5f5f5"/>
+        <rect x="640" y="376" width="208" height="72" rx="6" fill="rgba(191,69,32,0.08)" stroke="#bf4520" stroke-width="1"/>
+        <rect x="648" y="382" width="32" height="12" rx="2" fill="transparent" stroke="rgba(191,69,32,0.50)" stroke-width="0.8"/>
+        <text x="664" y="391" fill="#bf4520" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">MQTT</text>
+        <text x="744" y="416" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Mosquitto broker</text>
+        <text x="744" y="432" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">dynsec ACLs · 127.0.0.1</text>
+
+        <!-- Node: ESP32 + OLED (device) -->
+        <rect x="960" y="208" width="240" height="72" rx="6" fill="#f5f5f5"/>
+        <rect x="960" y="208" width="240" height="72" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <rect x="968" y="214" width="28" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+        <text x="982" y="223" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">DEV</text>
+        <text x="1080" y="248" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">ESP32 + OLED</text>
+        <text x="1080" y="264" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">SH1106 · esp-mqtt</text>
+
+        <!-- Node: MongoDB Atlas (store) -->
+        <rect x="392" y="560" width="208" height="72" rx="6" fill="#f5f5f5"/>
+        <rect x="392" y="560" width="208" height="72" rx="6" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
+        <rect x="400" y="566" width="24" height="12" rx="2" fill="transparent" stroke="rgba(79,93,117,0.50)" stroke-width="0.8"/>
+        <text x="412" y="575" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">DB</text>
+        <text x="496" y="600" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">MongoDB Atlas</text>
+        <text x="496" y="616" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">devices · sessions · codes</text>
+
+        <!-- Node: LRCLIB (later phase) -->
+        <rect x="640" y="560" width="208" height="72" rx="6" fill="#f5f5f5"/>
+        <rect x="640" y="560" width="208" height="72" rx="6" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="4,3"/>
+        <rect x="648" y="566" width="28" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.22)" stroke-width="0.8"/>
+        <text x="662" y="575" fill="#5a6580" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">EXT</text>
+        <text x="744" y="600" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">LRCLIB</text>
+        <text x="744" y="616" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">timed lyrics · phase 3</text>
+
+        <!-- Node: Claude API (later phase) -->
+        <rect x="888" y="560" width="208" height="72" rx="6" fill="#f5f5f5"/>
+        <rect x="888" y="560" width="208" height="72" rx="6" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="4,3"/>
+        <rect x="896" y="566" width="28" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.22)" stroke-width="0.8"/>
+        <text x="910" y="575" fill="#5a6580" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">EXT</text>
+        <text x="992" y="600" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Claude API</text>
+        <text x="992" y="616" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">lyric animations · phase 4</text>
+
+        <!-- Legend strip -->
+        <line x1="40" y1="664" x2="1240" y2="664" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+        <text x="40" y="680" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">LEGEND</text>
+
+        <rect x="40" y="690" width="14" height="10" rx="2" fill="rgba(191,69,32,0.08)" stroke="#bf4520" stroke-width="1"/>
+        <text x="60" y="698" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Focal · broker</text>
+
+        <rect x="150" y="690" width="14" height="10" rx="2" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <text x="170" y="698" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Service / device</text>
+
+        <rect x="270" y="690" width="14" height="10" rx="2" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
+        <text x="290" y="698" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Store</text>
+
+        <rect x="360" y="690" width="14" height="10" rx="2" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <text x="380" y="698" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Static hosting</text>
+
+        <rect x="470" y="690" width="14" height="10" rx="2" fill="rgba(79,93,117,0.10)" stroke="#5a6580" stroke-width="1"/>
+        <text x="490" y="698" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Browser</text>
+
+        <rect x="560" y="690" width="14" height="10" rx="2" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="4,3"/>
+        <text x="580" y="698" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Later phase</text>
+
+        <line x1="690" y1="695" x2="718" y2="695" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+        <text x="726" y="698" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">HTTPS / WSS</text>
+
+        <line x1="830" y1="695" x2="858" y2="695" stroke="#bf4520" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+        <text x="866" y="698" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Device link (TLS)</text>
+
+        <line x1="980" y1="695" x2="1008" y2="695" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <text x="1016" y="698" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Internal</text>
+
+        <line x1="1090" y1="695" x2="1118" y2="695" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+        <text x="1126" y="698" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Later-phase call</text>
+      </svg>
+    </div>
+  </div>
+</body>
+</html>

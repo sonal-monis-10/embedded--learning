@@ -1,138 +1,62 @@
 # =============================================================================
-#  Makefile — shortcuts for the firmware builds in this project
+#  Makefile — top-level shortcuts for the esp32-oled project
 # =============================================================================
 #
-#  QUICK REFERENCE
-#      make oled       flash the OLED demo (SH1106) AND open the monitor
-#      make scanner    flash the I2C scanner        AND open the monitor
-#      make help       list every target
+#  The firmware has its own Makefile in firmware/. Every target listed in
+#  FIRMWARE_TARGETS is passed straight to it, so `make oled` works from here
+#  as well as from inside firmware/.
 #
-#  IMPORTANT: the indented lines below MUST use real TAB characters, not
-#  spaces. Make requires this. If your editor converts tabs to spaces you
-#  will get "missing separator" errors.
+#      make oled       flash the app (SH1106) AND open the monitor
+#      make check      compile every firmware environment
+#      make help       list every firmware target
+#
+#  IMPORTANT: the indented lines below MUST use real TAB characters.
 # =============================================================================
 
-# Use pio from PATH if it is there, otherwise PlatformIO's own install
-# location. ?= still lets you override it per command:
-#     make oled PIO=/some/other/pio
-PIO ?= $(shell command -v pio 2>/dev/null || echo $(HOME)/.platformio/penv/bin/pio)
+FIRMWARE_TARGETS := help oled oled-ssd1306 demo scanner monitor erase \
+                    build build-ssd1306 build-scanner check \
+                    upload upload-ssd1306 upload-scanner \
+                    clean clean-all ports
 
-# .PHONY tells make these names are COMMANDS, not files to be produced.
-.PHONY: help oled oled-ssd1306 scanner monitor \
-        build build-ssd1306 build-scanner upload upload-ssd1306 upload-scanner \
-        clean clean-all check ports
+.PHONY: $(FIRMWARE_TARGETS) install lint test test-docker dev-backend dev-frontend
 
-# ---------------------------------------------------------------------------
-#  DEFAULT TARGET
-#  A bare `make` prints help rather than building, so it never flashes
-#  anything unexpected.
-# ---------------------------------------------------------------------------
-help:
-	@echo ""
-	@echo "  ESP32 OLED — build targets"
-	@echo "  =========================="
-	@echo ""
-	@echo "  EVERYDAY USE"
-	@echo "    make oled           flash OLED demo (SH1106)  + open monitor"
-	@echo "    make oled-ssd1306   flash OLED demo (SSD1306) + open monitor"
-	@echo "    make scanner        flash I2C scanner         + open monitor"
-	@echo "    make monitor        open serial monitor only"
-	@echo ""
-	@echo "  COMPILE WITHOUT FLASHING"
-	@echo "    make build          compile OLED demo (SH1106)"
-	@echo "    make build-ssd1306  compile OLED demo (SSD1306)"
-	@echo "    make build-scanner  compile I2C scanner"
-	@echo "    make check          compile ALL three — run before committing"
-	@echo ""
-	@echo "  FLASH WITHOUT MONITOR"
-	@echo "    make upload"
-	@echo "    make upload-ssd1306"
-	@echo "    make upload-scanner"
-	@echo ""
-	@echo "  MAINTENANCE"
-	@echo "    make clean          remove build artifacts"
-	@echo "    make clean-all      also remove downloaded toolchains"
-	@echo "    make ports          list detected serial ports"
-	@echo ""
-	@echo "  Exit the serial monitor with Ctrl+C."
-	@echo ""
+# -C firmware: run make inside firmware/, where platformio.ini lives.
+$(FIRMWARE_TARGETS):
+	$(MAKE) -C firmware $@
 
 # ---------------------------------------------------------------------------
-#  EVERYDAY TARGETS
-#  Upload, then monitor. If the upload fails, make stops before the monitor.
+#  BACKEND + FRONTEND (Node.js 24, see .nvmrc; run `nvm use` first)
 # ---------------------------------------------------------------------------
 
-# Our module is an SH1106, so this is the one you normally want.
-oled:
-	$(PIO) run -e oled_sh1106 -t upload
-	$(PIO) device monitor -e oled_sh1106
+# npm ci installs exactly what package-lock.json lists.
+install:
+	cd backend && npm ci
+	cd frontend && npm ci
 
-# For 0.96" modules with the SSD1306 controller. On an SH1106 this leaves
-# only random dots on the screen.
-oled-ssd1306:
-	$(PIO) run -e oled -t upload
-	$(PIO) device monitor -e oled
+lint:
+	cd backend && npm run lint && npm run format:check
+	cd frontend && npm run lint && npm run format:check
 
-# First thing to run when the screen stays blank: it should report a device
-# at 0x3C (or 0x3D).
-scanner:
-	$(PIO) run -e scanner -t upload
-	$(PIO) device monitor -e scanner
+# Frontend has no tests yet; a successful production build is the check.
+test:
+	cd backend && npm test
+	cd frontend && npm run build
 
-monitor:
-	$(PIO) device monitor -e oled_sh1106
+# The full backend suite, broker tests included, inside the backend image
+# (which has Mosquitto), next to a throwaway MongoDB container.
+test-docker:
+	docker build --target test -t esp32-oled-backend-test backend
+	docker network create oled-test >/dev/null 2>&1 || true
+	docker run -d --rm --name oled-test-mongo --network oled-test mongo:latest >/dev/null
+	docker run --rm --network oled-test \
+	  -e TEST_MONGODB_URI=mongodb://oled-test-mongo:27017 \
+	  esp32-oled-backend-test; status=$$?; \
+	  docker stop oled-test-mongo >/dev/null; exit $$status
 
-# ---------------------------------------------------------------------------
-#  COMPILE-ONLY TARGETS
-#  No upload, so these work with no board connected.
-# ---------------------------------------------------------------------------
-build:
-	$(PIO) run -e oled_sh1106
+# Each in its own terminal. Backend: http://localhost:8080, frontend: :5173.
+# Without Mosquitto installed, set MQTT_ENABLED=false in backend/.env.
+dev-backend:
+	cd backend && npm run dev
 
-build-ssd1306:
-	$(PIO) run -e oled
-
-build-scanner:
-	$(PIO) run -e scanner
-
-# The scanner compiles tools/ while the OLED builds compile src/, and the two
-# OLED builds take different #ifdef branches (USE_SH1106), so one can break
-# while the others still build. Run this before committing.
-check:
-	@echo "--- compiling oled_sh1106 ---"
-	$(PIO) run -e oled_sh1106
-	@echo "--- compiling oled (ssd1306) ---"
-	$(PIO) run -e oled
-	@echo "--- compiling scanner ---"
-	$(PIO) run -e scanner
-	@echo "--- all environments compiled ---"
-
-# ---------------------------------------------------------------------------
-#  FLASH WITHOUT MONITOR
-# ---------------------------------------------------------------------------
-upload:
-	$(PIO) run -e oled_sh1106 -t upload
-
-upload-ssd1306:
-	$(PIO) run -e oled -t upload
-
-upload-scanner:
-	$(PIO) run -e scanner -t upload
-
-# ---------------------------------------------------------------------------
-#  MAINTENANCE
-# ---------------------------------------------------------------------------
-
-# Removes compiled object files only.
-clean:
-	$(PIO) run -t clean
-
-# Deletes the ENTIRE .pio directory, including the downloaded toolchain. The
-# next build re-downloads it, which takes several minutes.
-clean-all:
-	rm -rf .pio
-
-# Lists serial ports PlatformIO can see. First thing to check when an upload
-# fails with a connection error.
-ports:
-	$(PIO) device list
+dev-frontend:
+	cd frontend && npm run dev

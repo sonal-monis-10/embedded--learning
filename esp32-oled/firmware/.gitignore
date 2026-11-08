@@ -1,0 +1,12 @@
+# PlatformIO build artifacts and downloaded toolchains.
+# .pio/ can reach hundreds of MB — never commit it.
+.pio/
+
+# VS Code / PlatformIO IDE generated files.
+.vscode/
+!.vscode/extensions.json
+
+# Editor and OS noise
+*.swp
+*~
+.DS_Store

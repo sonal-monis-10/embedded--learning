@@ -1,0 +1,82 @@
+# esp32-oled: deploy the frontend only after the backend is live.
+#
+# Render deploys the backend itself on every push that changes
+# esp32-oled/backend/. This workflow waits until /healthz is healthy AND
+# reports the pushed commit, then calls the frontend's Deploy Hook. A push
+# that changes only the frontend deploys it straight away.
+#
+# Setup, once:
+#   Render → esp32-oled-web → Settings → Deploy Hook → copy the URL, then
+#   GitHub → repo Settings → Secrets and variables → Actions → New secret
+#     RENDER_FRONTEND_DEPLOY_HOOK = that URL
+
+name: esp32-oled deploy
+
+on:
+  push:
+    branches: [main, feature/oled-phase-1-foundation]
+    paths:
+      - esp32-oled/backend/**
+      - esp32-oled/frontend/**
+      - esp32-oled/render.yaml
+  workflow_dispatch: # run by hand: waits for the current commit, then deploys
+
+# A newer push supersedes a deploy still waiting on an older backend.
+concurrency:
+  group: esp32-oled-deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  BACKEND_URL: https://esp32-oled-api.onrender.com
+
+jobs:
+  frontend-after-backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: What changed
+        id: changes
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          # A new branch or a manual run has no "before": treat it as a backend change.
+          if [ -z "$BEFORE" ] || [ "$BEFORE" = 0000000000000000000000000000000000000000 ]; then
+            echo "backend=true" >> "$GITHUB_OUTPUT"
+          elif git diff --name-only "$BEFORE" "$GITHUB_SHA" | grep -q '^esp32-oled/backend/'; then
+            echo "backend=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "backend=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Wait for the backend on this commit
+        if: steps.changes.outputs.backend == 'true'
+        run: |
+          # Render builds in ~3-5 min; give it up to 25.
+          for attempt in $(seq 1 100); do
+            body=$(curl -s --max-time 60 "$BACKEND_URL/healthz" || true)
+            commit=$(echo "$body" | jq -r '.commit // empty' 2>/dev/null || true)
+            status=$(echo "$body" | jq -r '.status // empty' 2>/dev/null || true)
+            echo "attempt $attempt: status=${status:-none} commit=${commit:-none}"
+            if [ "$commit" = "$GITHUB_SHA" ] && [ "$status" = ok ]; then
+              echo "Backend is live on $GITHUB_SHA"
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "::error::The backend never reported commit $GITHUB_SHA as healthy"
+          exit 1
+
+      - name: Deploy the frontend
+        env:
+          HOOK: ${{ secrets.RENDER_FRONTEND_DEPLOY_HOOK }}
+        run: |
+          if [ -z "$HOOK" ]; then
+            echo "::error::Add the RENDER_FRONTEND_DEPLOY_HOOK secret (see the top of this file)"
+            exit 1
+          fi
+          curl -fsS -X POST "$HOOK" > /dev/null
+          echo "Frontend deploy started"
